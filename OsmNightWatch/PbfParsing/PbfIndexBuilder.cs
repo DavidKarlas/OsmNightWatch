@@ -10,7 +10,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace OsmNightWatch
+namespace OsmNightWatch.PbfParsing
 {
     public class PbfIndexBuilder
     {
@@ -60,10 +60,10 @@ namespace OsmNightWatch
             return index;
         }
 
-
-
-        static Task ProcessBlob(object stateObj)
+        static void ProcessBlob(object? stateObj)
         {
+            if (stateObj == null)
+                return;
             var state = ((
                 long fileOffset,
                 ConcurrentBag<(long FirstNodeId, long FileOffset)> nodesBag,
@@ -74,19 +74,18 @@ namespace OsmNightWatch
             var firstElement = ParseBlob(state.readBuffer);
             switch (firstElement.Type)
             {
-                case OsmSharp.OsmGeoType.Node:
+                case OsmGeoType.Node:
                     state.nodesBag.Add((firstElement.Id, state.fileOffset));
                     break;
-                case OsmSharp.OsmGeoType.Way:
+                case OsmGeoType.Way:
                     state.waysBag.Add((firstElement.Id, state.fileOffset));
                     break;
-                case OsmSharp.OsmGeoType.Relation:
+                case OsmGeoType.Relation:
                     state.relationsBag.Add((firstElement.Id, state.fileOffset));
                     break;
             }
             ArrayPool<byte>.Shared.Return(state.readBuffer);
             state.slimSemaphore.Release();
-            return Task.CompletedTask;
         }
 
         static int ParseHeader(Span<byte> buffer, FileStream file, string expectedHeader)
@@ -113,7 +112,7 @@ namespace OsmNightWatch
             file.Seek(headerBlobSize, SeekOrigin.Current);
         }
 
-        static (OsmSharp.OsmGeoType Type, long Id) ParseBlob(byte[] readBuffer)
+        static (OsmGeoType Type, long Id) ParseBlob(byte[] readBuffer)
         {
             ReadOnlySpan<byte> readDataR = readBuffer;
             var uncompressedDataSize = BinSerialize.ReadProtoUInt32(ref readDataR);
@@ -149,7 +148,7 @@ namespace OsmNightWatch
                         {
                             currentNodeId += BinSerialize.ReadZigZagLong(ref uncompressedData);
                             ArrayPool<byte>.Shared.Return(uncompressbuffer);
-                            return (OsmSharp.OsmGeoType.Node, currentNodeId);// return first node since right now we only care about that
+                            return (OsmGeoType.Node, currentNodeId);// return first node since right now we only care about that
                         }
                         uncompressedData = uncompressedData.Slice(uncompressedData.Length - lengthAtEndDenseNodes);
 
@@ -162,12 +161,12 @@ namespace OsmNightWatch
                         BinSerialize.EnsureProtoIndexAndType(ref uncompressedData, 1, 0);
                         var wayid = BinSerialize.ReadPackedLong(ref uncompressedData);
                         ArrayPool<byte>.Shared.Return(uncompressbuffer);
-                        return (OsmSharp.OsmGeoType.Way, wayid);
+                        return (OsmGeoType.Way, wayid);
                     case 4:
                         BinSerialize.EnsureProtoIndexAndType(ref uncompressedData, 1, 0);
                         var relationId = BinSerialize.ReadPackedLong(ref uncompressedData);
                         ArrayPool<byte>.Shared.Return(uncompressbuffer);
-                        return (OsmSharp.OsmGeoType.Relation, relationId);
+                        return (OsmGeoType.Relation, relationId);
                 }
             }
             throw new Exception();
@@ -283,9 +282,22 @@ namespace OsmNightWatch
             return array[last].Offset;
         }
 
-        public List<(long FileOffset, HashSet<long> AllElementsInside)> CaclulateFileOffsets(IEnumerable<long> elementsToLoad, OsmSharp.OsmGeoType type)
+        public List<long> GetAllNodeFileOffsets()
         {
-            var result = new List<(long FileOffset, HashSet<long>)>();
+            return nodeOffsets.Select(o => o.FileOffset).ToList();
+        }
+        public List<long> GetAllWayFileOffsets()
+        {
+            return wayOffsets.Select(o => o.FileOffset).ToList();
+        }
+        public List<long> GetAllRelationFileOffsets()
+        {
+            return relationOffsets.Select(o => o.FileOffset).ToList();
+        }
+
+        public List<(long FileOffset, HashSet<long>? AllElementsInside)> CaclulateFileOffsets(IEnumerable<long> elementsToLoad, OsmGeoType type)
+        {
+            var result = new List<(long FileOffset, HashSet<long>?)>();
             var sortedElements = elementsToLoad.ToArray();
             Array.Sort(sortedElements);
 
@@ -293,7 +305,8 @@ namespace OsmNightWatch
             {
                 OsmGeoType.Node => nodeOffsets,
                 OsmGeoType.Way => wayOffsets,
-                OsmGeoType.Relation => relationOffsets
+                OsmGeoType.Relation => relationOffsets,
+                _ => throw new NotImplementedException()
             };
 
             var currentIndex = 0;
@@ -324,6 +337,11 @@ namespace OsmNightWatch
             }
             Console.WriteLine($"Created {result.Count} buckets from {offsets.Length} offsets.");
             return result;
+        }
+
+        public long GetLastNodeOffset()
+        {
+            return nodeOffsets.Last().FileOffset;
         }
     }
 }

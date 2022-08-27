@@ -1,16 +1,17 @@
 ﻿using OsmNightWatch;
+using OsmNightWatch.PbfParsing;
 using System.Buffers;
 using System.Diagnostics;
 using System.Globalization;
 
 var sw = Stopwatch.StartNew();
 //var path = @"C:\COSMOS\planet-220606.osm.pbf";
-var path = @"C:\COSMOS\planet-220815.osm.pbf";
+var path = @"D:\planet-latest.osm.pbf";
 var index = PbfIndexBuilder.BuildIndex(path);
 
 var nodesToLoad = new HashSet<long>();
 
-var relevantRelations = new HashSet<OsmSharp.Relation>(PbfParser.Parse(path, new List<(string TagKey, string TagValue)>()
+var relevantRelations = new HashSet<OsmSharp.Relation>(RelationsParser.Parse(path, new List<(string TagKey, string TagValue)>()
 {
     ("boundary","administrative" )
 }, index));
@@ -38,7 +39,7 @@ foreach (var relation in relevantRelations.ToArray())
     }
 }
 
-var relevantWays = PbfParser.LoadWays(path, waysToLoad, index);
+var relevantWays = WaysParser.LoadWays (path, waysToLoad, index);
 var sw3 = Stopwatch.StartNew();
 foreach (var relation in relevantRelations)
 {

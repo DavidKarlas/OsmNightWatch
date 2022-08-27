@@ -1,4 +1,5 @@
 ﻿//using LightningDB;
+//using OsmNightWatch.PbfParsing;
 //using OsmSharp;
 //using OsmSharp.IO.Binary;
 //using System;
@@ -25,12 +26,13 @@
 //            this.pbfIndex = pbfIndex;
 //        }
 
-//        public Task InitializeAsync()
+//        public void InitializeAsync()
 //        {
 //            var seqNumber = GetSequenceNumber();
-//            if(seqNumber == null)
+//            if (seqNumber == null)
 //            {
-
+//                var offset = pbfIndex.GetLastNodeOffset();
+//                //ParsingHelper.LoadNodes
 //            }
 //        }
 
