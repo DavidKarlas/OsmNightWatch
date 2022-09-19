@@ -1,13 +1,13 @@
 ﻿using OsmSharp;
 using OsmSharp.Db;
 
-namespace OsmNightWatch
+namespace OsmNightWatch.Analyzers
 {
     public interface IOsmAnalyzer
     {
         string AnalyzerName { get; }
 
-        List<(OsmGeoType Type, List<(string TagKey, string TagValue)>)> GetFilter();
+        IEnumerable<ElementFilter> GetFilters();
 
         bool AnalyzeRelation(Relation relation, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource);
     }

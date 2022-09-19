@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using OsmSharp;
 using OsmSharp.Tags;
+using OsmSharp.IO.PBF;
 
 namespace OsmNightWatch.PbfParsing
 {

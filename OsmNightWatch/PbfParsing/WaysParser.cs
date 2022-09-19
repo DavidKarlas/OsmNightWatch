@@ -7,11 +7,11 @@ namespace OsmNightWatch.PbfParsing
 {
     public static class WaysParser
     {
-        public static Dictionary<long, Way> LoadWays(string path, HashSet<long> waysToLoad, PbfIndex index)
+        public static Dictionary<long, Way> LoadWays(HashSet<long> waysToLoad, PbfIndex index)
         {
             var fileOffsets = index.CaclulateFileOffsets(waysToLoad, OsmGeoType.Way);
             var waysBag = new ConcurrentBag<Way>();
-            ParallelParse(path, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer) =>
+            ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer) =>
             {
                 ParseWays(waysBag, relevantIds, readBuffer);
             });

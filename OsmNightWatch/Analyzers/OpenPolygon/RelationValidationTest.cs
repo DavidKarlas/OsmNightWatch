@@ -1,11 +1,7 @@
 ﻿using OsmSharp;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using OsmSharp.Db;
 
-namespace OsmNightWatch
+namespace OsmNightWatch.Analyzers.OpenPolygon
 {
     internal class RelationValidationTest
     {
@@ -65,7 +61,7 @@ namespace OsmNightWatch
             }
         }
 
-        public bool Visit(Relation r, Dictionary<long, Way> ways)
+        public bool Visit(Relation r, IOsmGeoSource db)
         {
             List<Graph> graphs = new();
             foreach (var member in r.Members)
@@ -77,7 +73,7 @@ namespace OsmNightWatch
 
                 if (member.Type == OsmGeoType.Way)
                 {
-                    var way = ways[member.Id];
+                    var way = db.GetWay(member.Id);
                     var nodes = way.Nodes;
                     if (nodes.Length < 2)
                     {
@@ -99,7 +95,7 @@ namespace OsmNightWatch
                     graphs.Add(new Graph(way));
                 }
             }
-            bool mergedSomething = false;
+            bool mergedSomething;
             do
             {
                 mergedSomething = false;

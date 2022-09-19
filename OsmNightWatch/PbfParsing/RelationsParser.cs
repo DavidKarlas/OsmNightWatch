@@ -9,19 +9,55 @@ namespace OsmNightWatch.PbfParsing
 {
     public static class RelationsParser
     {
-        public static List<OsmSharp.Relation> Parse(string path, List<(string TagKey, string TagValue)> relationsTagsFilter, PbfIndex index)
+        public static Dictionary<long, Relation> Parse(IEnumerable<ElementFilter> filters, PbfIndex index)
         {
-            var indexFilters = new IndexedTagFilters(relationsTagsFilter);
-            var relationsBag = new ConcurrentBag<OsmSharp.Relation>();
-            ParallelParse(path, index.GetAllRelationFileOffsets().Select(o => (o, (HashSet<long>?)null)).ToList(),
+            var indexFilters = new IndexedTagFilters(filters.Where(f => f.GeoType == OsmGeoType.Relation).SelectMany(f => f.Tags));
+            var relationsBag = new ConcurrentBag<Relation>();
+            ParallelParse(index.PbfPath, index.GetAllRelationFileOffsets().Select(o => (o, (HashSet<long>?)null)).ToList(),
                 (HashSet<long>? relevantIds, byte[] readBuffer) =>
                 {
-                    ParseRelations(relationsBag, indexFilters, readBuffer);
+                    ParseRelations(relationsBag, null, indexFilters, readBuffer);
                 });
-            return relationsBag.ToList();
+            while (true)
+            {
+                var dictionaryOfLoadedRelations = relationsBag.ToDictionary(r => (long)r.Id!, r => r);
+                var unloadedChildren = new HashSet<long>();
+                foreach (var relation in dictionaryOfLoadedRelations.Values)
+                {
+                    foreach (var member in relation.Members)
+                    {
+                        if (member.Type != OsmGeoType.Relation)
+                            continue;
+                        if (dictionaryOfLoadedRelations.ContainsKey(member.Id))
+                            continue;
+                        unloadedChildren.Add(member.Id);
+                    }
+                }
+                if (unloadedChildren.Count == 0)
+                {
+                    return dictionaryOfLoadedRelations;
+                }
+                ParallelParse(index.PbfPath, index.CaclulateFileOffsets(unloadedChildren, OsmGeoType.Relation),
+                    (HashSet<long>? relevantIds, byte[] readBuffer) =>
+                    {
+                        ParseRelations(relationsBag, relevantIds, null, readBuffer);
+                    });
+            }
         }
 
-        public static void ParseRelations(ConcurrentBag<OsmSharp.Relation> relationsBag, IndexedTagFilters tagFilters, byte[] readBuffer)
+        public static Dictionary<long, Relation> LoadRelations(HashSet<long> relationsToLoad, PbfIndex index)
+        {
+            var fileOffsets = index.CaclulateFileOffsets(relationsToLoad, OsmGeoType.Way);
+            var relationsBag = new ConcurrentBag<Relation>();
+            ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer) =>
+            {
+                ParseRelations(relationsBag, relevantIds, null, readBuffer);
+            });
+
+            return relationsBag.ToDictionary(r => (long)r.Id!, r => r);
+        }
+
+        public static void ParseRelations(ConcurrentBag<Relation> relationsBag, HashSet<long>? relationsToLoad, IndexedTagFilters? tagFilters, byte[] readBuffer)
         {
             ReadOnlySpan<byte> dataSpan = readBuffer;
             Decompress(ref dataSpan, out var uncompressbuffer, out var uncompressedSpan, out var uncompressedSize);
@@ -32,7 +68,7 @@ namespace OsmNightWatch.PbfParsing
             while (uncompressedSpan.Length > stringTableTargetLength)
             {
                 var (index, size) = BinSerialize.ReadProtoByteArraySize(ref uncompressedSpan);
-                if (tagFilters.StringLengths.TryGetValue(size, out var utf8StringList))
+                if (tagFilters != null && tagFilters.StringLengths.TryGetValue(size, out var utf8StringList))
                 {
                     foreach (var utf8String in utf8StringList)
                     {
@@ -46,21 +82,24 @@ namespace OsmNightWatch.PbfParsing
                 uncompressedSpan = uncompressedSpan.Slice(size);
             }
 
-            var idFilters = new Dictionary<int, HashSet<int>?>();
-            foreach (var item in tagFilters.Utf8RelationsTagsFilter)
+            var stringIdFilters = new Dictionary<int, HashSet<int>?>();
+            if (tagFilters != null)
             {
-                if (item.TagValues.Count == 0)
+                foreach (var item in tagFilters.Utf8RelationsTagsFilter)
                 {
-                    idFilters.Add(utf8ToIdMappings[item.TagKey], null);
-                }
-                else
-                {
-                    var hashset = new HashSet<int>();
-                    foreach (var tagValue in item.TagValues)
+                    if (item.TagValues.Count == 0)
                     {
-                        hashset.Add(utf8ToIdMappings[tagValue]);
+                        stringIdFilters.Add(utf8ToIdMappings[item.TagKey], null);
                     }
-                    idFilters.Add(utf8ToIdMappings[item.TagKey], hashset);
+                    else
+                    {
+                        var hashset = new HashSet<int>();
+                        foreach (var tagValue in item.TagValues)
+                        {
+                            hashset.Add(utf8ToIdMappings[tagValue]);
+                        }
+                        stringIdFilters.Add(utf8ToIdMappings[item.TagKey], hashset);
+                    }
                 }
             }
 
@@ -68,7 +107,7 @@ namespace OsmNightWatch.PbfParsing
             var tagValues = new List<int>();
             var roles = new List<int>();
             var membersIds = new List<long>();
-            var memberTypes = new List<OsmSharp.OsmGeoType>();
+            var memberTypes = new List<OsmGeoType>();
             var expectedValues = new Dictionary<int, HashSet<int>>();
             while (uncompressedSpan.Length > 0)
             {
@@ -91,8 +130,20 @@ namespace OsmNightWatch.PbfParsing
                     }
                     BinSerialize.EnsureProtoIndexAndType(ref uncompressedSpan, 1, 0);
                     var relationId = BinSerialize.ReadPackedLong(ref uncompressedSpan);
-
                     bool accepted = false;
+                    if (relationsToLoad != null)
+                    {
+                        if (relationsToLoad.Contains(relationId))
+                        {
+                            accepted = true;
+                        }
+                        else
+                        {
+                            uncompressedSpan = uncompressedSpan.Slice(uncompressedSpan.Length - expectedLengthAtEndOfPrimitive);
+                            continue;
+                        }
+                    }
+
                     while (uncompressedSpan.Length > expectedLengthAtEndOfPrimitive)
                     {
                         var (innerIndex, type) = BinSerialize.ReadProtoIndexAndType(ref uncompressedSpan);
@@ -105,7 +156,7 @@ namespace OsmNightWatch.PbfParsing
                                 {
                                     int currentTagKeyId = BinSerialize.ReadPackedInt(ref uncompressedSpan);
                                     tagKeys.Add(currentTagKeyId);
-                                    if (!accepted && idFilters.TryGetValue(currentTagKeyId, out var hashset))
+                                    if (!accepted && stringIdFilters.TryGetValue(currentTagKeyId, out var hashset))
                                     {
                                         if (hashset == null)
                                         {
@@ -177,7 +228,7 @@ namespace OsmNightWatch.PbfParsing
                                 var expectedLengthAtEndOfTypes = uncompressedSpan.Length - sizeOfTypes;
                                 while (uncompressedSpan.Length > expectedLengthAtEndOfTypes)
                                 {
-                                    var memberType = (OsmSharp.OsmGeoType)BinSerialize.ReadPackedInt(ref uncompressedSpan);
+                                    var memberType = (OsmGeoType)BinSerialize.ReadPackedInt(ref uncompressedSpan);
                                     memberTypes.Add(memberType);
                                 }
                                 break;
@@ -197,7 +248,7 @@ namespace OsmNightWatch.PbfParsing
                         {
                             tags.Add(new Tag(Encoding.UTF8.GetString(stringSpans[tagKeys[i]].Span), Encoding.UTF8.GetString(stringSpans[tagValues[i]].Span)));
                         }
-                        relationsBag.Add(new OsmSharp.Relation()
+                        relationsBag.Add(new Relation()
                         {
                             Id = (long)relationId,
                             Members = members,

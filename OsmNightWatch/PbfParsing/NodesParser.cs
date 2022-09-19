@@ -1,7 +1,9 @@
 ﻿using OsmSharp;
+using OsmSharp.IO.PBF;
 using System.Buffers;
 using System.Collections.Concurrent;
 using static OsmNightWatch.PbfParsing.ParsingHelper;
+using Node = OsmSharp.Node;
 
 namespace OsmNightWatch.PbfParsing
 {
@@ -12,11 +14,11 @@ namespace OsmNightWatch.PbfParsing
             return .000000001 * (offset + granularity * valueOffset);
         }
 
-        public static Dictionary<long, Node> LoadNodes(string path, HashSet<long> nodesToLoad, PbfIndex index)
+        public static Dictionary<long, Node> LoadNodes(HashSet<long> nodesToLoad, PbfIndex index)
         {
             var fileOffsets = index.CaclulateFileOffsets(nodesToLoad, OsmGeoType.Node);
             var nodeBags = new ConcurrentBag<Node>();
-            ParallelParse(path, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer) =>
+            ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer) =>
             {
                 ParseNodes(nodeBags, relevantIds, readBuffer);
             });
@@ -27,7 +29,7 @@ namespace OsmNightWatch.PbfParsing
         private static void ParseNodes(ConcurrentBag<Node> nodeBags, HashSet<long>? nodesToLoad, byte[] readBuffer)
         {
             ReadOnlySpan<byte> dataSpan = readBuffer;
-            Decompress(ref dataSpan, out var uncompressbuffer, out var uncompressedSpan, out var uncompressedSize);
+            Decompress(ref dataSpan, out var uncompressbuffer, out var uncompressedSpan, out var _);
             var stringTableSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedSpan).size;
             uncompressedSpan = uncompressedSpan.Slice(stringTableSize);
 
@@ -137,6 +139,37 @@ namespace OsmNightWatch.PbfParsing
                 }
             }
             throw new InvalidOperationException("if (waysToLoad.Count == 0) should get us out of here before we get here...");
+        }
+
+        class NodeCollector : IPBFOsmPrimitiveConsumer
+        {
+            public List<Node> Nodes { get; } = new List<Node>();
+
+            public void ProcessNode(PrimitiveBlock block, OsmSharp.IO.PBF.Node node)
+            {
+                Nodes.Add(Encoder.DecodeNode(block, node));
+            }
+
+            public void ProcessRelation(PrimitiveBlock block, OsmSharp.IO.PBF.Relation relation)
+            {
+                throw new NotImplementedException();
+            }
+
+            public void ProcessWay(PrimitiveBlock block, OsmSharp.IO.PBF.Way way)
+            {
+                throw new NotImplementedException();
+            }
+        }
+
+        public static Node[] LoadNodesWithMetadata(string pbfPath, long offset)
+        {
+            using var fileStream = new FileStream(pbfPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            fileStream.Position = offset;
+            var osmReader = new PBFReader(fileStream);
+            var block = osmReader.MoveNext();
+            var collector = new NodeCollector();
+            Encoder.Decode(block, collector, false, false, false, out _, out _, out _);
+            return collector.Nodes.ToArray();
         }
     }
 }

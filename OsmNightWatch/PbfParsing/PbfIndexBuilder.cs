@@ -14,17 +14,17 @@ namespace OsmNightWatch.PbfParsing
 {
     public class PbfIndexBuilder
     {
-        public static PbfIndex BuildIndex(string path, bool ignoreCache = false)
+        public static PbfIndex BuildIndex(string pbfPath, bool ignoreCache = false)
         {
-            var cachePath = Path.ChangeExtension(path, "pbf.index");
+            var cachePath = Path.ChangeExtension(pbfPath, "pbf.index");
             if (!ignoreCache && File.Exists(cachePath))
             {
                 using var cacheReadStream = File.Open(cachePath, FileMode.Open, FileAccess.Read, FileShare.Read);
                 Console.WriteLine("Loaded PbfIndex from cache file.");
-                return new PbfIndex(cacheReadStream);
+                return new PbfIndex(cacheReadStream, pbfPath);
             }
             Console.WriteLine("Building PbfIndex...");
-            var file = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var file = File.Open(pbfPath, FileMode.Open, FileAccess.Read, FileShare.Read);
 
 #if DEBUG
             var slimSemaphore = new SemaphoreSlim(1);
@@ -51,6 +51,7 @@ namespace OsmNightWatch.PbfParsing
             }
             Task.WhenAll(tasks).Wait();
             var index = new PbfIndex(
+                pbfPath,
                 nodesBag.OrderBy(n => n.FirstNodeId).ToArray(),
                 waysBag.OrderBy(n => n.FirstWayId).ToArray(),
                 relationsBag.OrderBy(n => n.FirstRelationId).ToArray());
@@ -178,18 +179,21 @@ namespace OsmNightWatch.PbfParsing
         private readonly (long FirstNodeId, long FileOffset)[] nodeOffsets;
         private readonly (long FirstWayId, long FileOffset)[] wayOffsets;
         private readonly (long FirstRelationId, long FileOffset)[] relationOffsets;
+        public string PbfPath { get; }
 
         public PbfIndex(
+            string path,
             (long FirstNodeId, long FileOffset)[] nodeOffsets,
             (long FirstWayId, long FileOffset)[] wayOffsets,
             (long FirstRelationId, long FileOffset)[] relationOffsets)
         {
+            PbfPath = path;
             this.nodeOffsets = nodeOffsets;
             this.wayOffsets = wayOffsets;
             this.relationOffsets = relationOffsets;
         }
 
-        public PbfIndex(Stream cacheStream)
+        public PbfIndex(Stream cacheStream, string pbfPath)
         {
             var binaryReader = new BinaryReader(cacheStream);
             nodeOffsets = new (long FirstNodeId, long FileOffset)[binaryReader.ReadInt32()];
@@ -209,6 +213,7 @@ namespace OsmNightWatch.PbfParsing
             {
                 relationOffsets[i] = (binaryReader.ReadInt64(), binaryReader.ReadInt64());
             }
+            PbfPath = pbfPath;
         }
 
         public void Serialize(Stream stream)
