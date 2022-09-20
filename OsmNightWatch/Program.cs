@@ -7,6 +7,32 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Text.Json;
+
+var dummy = new OsmNightWatch.Lib.IssuesData();
+dummy.DateTime = DateTime.Now;
+dummy.AllIssues.Add(new OsmNightWatch.Lib.IssueData()
+{
+    IssueType = "OpenAdminPolygon",
+    OsmType = "relation",
+    OsmId = "1854615"
+});
+dummy.AllIssues.Add(new OsmNightWatch.Lib.IssueData()
+{
+    IssueType = "OpenAdminPolygon",
+    OsmType = "relation",
+    OsmId = "8795605"
+});
+dummy.AllIssues.Add(new OsmNightWatch.Lib.IssueData()
+{
+    IssueType = "OpenAdminPolygon",
+    OsmType = "relation",
+    OsmId = "6064117"
+});
+
+File.WriteAllText("issues.json", JsonSerializer.Serialize(dummy));
+
+return;
 
 HackOsmReplicationBug();
 

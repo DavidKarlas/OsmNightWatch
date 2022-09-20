@@ -23,4 +23,8 @@
     <PackageReference Include="OsmSharp.Replication" Version="0.0.2-alpha" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\OsmNightWatch.Lib\OsmNightWatch.Lib.csproj" />
+  </ItemGroup>
+
 </Project>

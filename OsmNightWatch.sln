@@ -3,7 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.3.32507.5
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmNightWatch", "OsmNightWatch\OsmNightWatch.csproj", "{4C392BB0-4E33-47A3-B56D-2D3B02F368C0}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OsmNightWatch", "OsmNightWatch\OsmNightWatch.csproj", "{4C392BB0-4E33-47A3-B56D-2D3B02F368C0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmNightWatch.Web", "OsmNightWatch.Web\OsmNightWatch.Web.csproj", "{59939C38-3AC9-489A-9FFF-1B7A028CA0A7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmNightWatch.Lib", "OsmNightWatch.Lib\OsmNightWatch.Lib.csproj", "{3E802EBA-A872-42B2-A54B-6632152288A2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -15,6 +19,14 @@ Global
 		{4C392BB0-4E33-47A3-B56D-2D3B02F368C0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4C392BB0-4E33-47A3-B56D-2D3B02F368C0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4C392BB0-4E33-47A3-B56D-2D3B02F368C0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{59939C38-3AC9-489A-9FFF-1B7A028CA0A7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{59939C38-3AC9-489A-9FFF-1B7A028CA0A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{59939C38-3AC9-489A-9FFF-1B7A028CA0A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{59939C38-3AC9-489A-9FFF-1B7A028CA0A7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3E802EBA-A872-42B2-A54B-6632152288A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3E802EBA-A872-42B2-A54B-6632152288A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3E802EBA-A872-42B2-A54B-6632152288A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3E802EBA-A872-42B2-A54B-6632152288A2}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

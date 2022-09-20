@@ -1,0 +1,49 @@
+﻿@page "/OpenAdminPolygons"
+
+<PageTitle>Open Admin Polygons</PageTitle>
+
+@using OsmNightWatch.Web.Data
+@using OsmNightWatch.Lib
+@inject IssuesDataService IssuesDataService
+
+<h1>Weather forecast</h1>
+
+<p>This component demonstrates fetching data from a service.</p>
+
+@if (issuesData == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Temp. (C)</th>
+                <th>Temp. (F)</th>
+                <th>Summary</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var issue in issuesData.AllIssues)
+            {
+                <tr>
+                    <td>@issue.IssueType</td>
+                    <td>@issue.OsmType</td>
+                    <td>@issue.OsmId</td>
+                    <td>@issue.Details</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IssuesData? issuesData;
+
+    protected override async Task OnInitializedAsync()
+    {
+        issuesData = await IssuesDataService.GetIssuesDataAsync(DateTime.Now);
+    }
+}
