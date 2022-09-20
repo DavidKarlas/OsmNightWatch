@@ -1,9 +1,58 @@
 ﻿@page "/"
 
-<PageTitle>Index</PageTitle>
+<PageTitle>OSM Issues Overview</PageTitle>
 
-<h1>Hello, world!</h1>
+@using OsmNightWatch.Web.Data
+@using OsmNightWatch.Lib
+@inject IssuesDataService IssuesDataService
 
-Welcome to your new app.
+<h1>OSM Issues Overview</h1>
 
-<SurveyPrompt Title="How is Blazor working for you?" />
+<p>Here is a list of current OSM issues. Let's fix them all.</p>
+
+@if (issuesData == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Issue type</th>
+                <th>Number of issues</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var issueGroup in issuesData.AllIssues.GroupBy(issue => issue.IssueType))
+            {
+                numberOfIssues = @issueGroup.Count();
+                <tr style="color:@TextColor(@numberOfIssues.GetValueOrDefault());">
+                    <td>@issueGroup.Key</td>
+                    <td>@numberOfIssues</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IssuesData? issuesData;
+    private int? numberOfIssues;
+
+    protected override async Task OnInitializedAsync()
+    {
+        issuesData = await IssuesDataService.GetIssuesDataAsync(DateTime.Now);
+    }
+
+    private string TextColor(int nunberOfIssues)
+    {
+        switch (nunberOfIssues)
+        {
+            case 0:
+                return "green";
+            default:
+                return "red";
+        }
+    }
+}
