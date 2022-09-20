@@ -1,0 +1,26 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="zlib\**" />
+    <EmbeddedResource Remove="zlib\**" />
+    <None Remove="zlib\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LibDeflate.NET" Version="1.9.1" />
+    <PackageReference Include="LightningDB" Version="0.14.1" />
+    <PackageReference Include="OsmSharp" Version="7.0.0-pre018" />
+    <PackageReference Include="OsmSharp.Replication" Version="0.0.2-alpha" />
+  </ItemGroup>
+
+</Project>
