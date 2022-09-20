@@ -11,6 +11,7 @@ using System.Text.Json;
 
 var dummy = new OsmNightWatch.Lib.IssuesData();
 dummy.DateTime = DateTime.Now;
+dummy.AllIssues = new List<OsmNightWatch.Lib.IssueData>();
 dummy.AllIssues.Add(new OsmNightWatch.Lib.IssueData()
 {
     IssueType = "OpenAdminPolygon",
@@ -28,6 +29,13 @@ dummy.AllIssues.Add(new OsmNightWatch.Lib.IssueData()
     IssueType = "OpenAdminPolygon",
     OsmType = "relation",
     OsmId = "6064117"
+});
+
+dummy.AllIssues.Add(new OsmNightWatch.Lib.IssueData()
+{
+    IssueType = "BrokenCoastLine",
+    OsmType = "way",
+    OsmId = "90379436"
 });
 
 File.WriteAllText("issues.json", JsonSerializer.Serialize(dummy));
