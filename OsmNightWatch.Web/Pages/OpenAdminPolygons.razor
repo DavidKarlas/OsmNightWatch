@@ -6,9 +6,9 @@
 @using OsmNightWatch.Lib
 @inject IssuesDataService IssuesDataService
 
-<h1>Weather forecast</h1>
+<h1>Open Admin Polygons</h1>
 
-<p>This component demonstrates fetching data from a service.</p>
+<p>Here is a list of all open admin polygons.</p>
 
 @if (issuesData == null)
 {
@@ -19,19 +19,21 @@ else
     <table class="table">
         <thead>
             <tr>
-                <th>Date</th>
-                <th>Temp. (C)</th>
-                <th>Temp. (F)</th>
-                <th>Summary</th>
+                <th>Issue type</th>
+                <th>OSM Type</th>
+                <th>OSM Id</th>
+                <th>OSM URL</th>
+                <th>Additional Details</th>
             </tr>
         </thead>
         <tbody>
-            @foreach (var issue in issuesData.AllIssues)
+            @foreach (var issue in issuesData.AllIssues.Where(issue => issue.IssueType == "OpenAdminPolygon"))
             {
                 <tr>
                     <td>@issue.IssueType</td>
                     <td>@issue.OsmType</td>
                     <td>@issue.OsmId</td>
+                    <td><a href=@createOSMUrl(@issue.OsmType, @issue.OsmId) target="_blank">link</a></td>
                     <td>@issue.Details</td>
                 </tr>
             }
@@ -45,5 +47,9 @@ else
     protected override async Task OnInitializedAsync()
     {
         issuesData = await IssuesDataService.GetIssuesDataAsync(DateTime.Now);
+    }
+
+    protected string createOSMUrl(string osmType, string osmId){
+        return $"https://www.openstreetmap.org/{osmType}/{osmId}";
     }
 }
