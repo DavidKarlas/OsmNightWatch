@@ -4,16 +4,20 @@ using OsmSharp.Db;
 
 namespace OsmNightWatch
 {
-    public class OsmDatabaseWithChangeset : IOsmGeoSource
+    public class OsmDatabaseWithReplicationData : IOsmGeoBatchSource
     {
         private readonly IOsmGeoSource baseSource;
         private Dictionary<long, Relation?> changesetRelations = new();
         private Dictionary<long, Way?> changesetWays = new();
         private Dictionary<long, Node?> changesetNodes = new();
 
-        public OsmDatabaseWithChangeset(IOsmGeoSource baseSource, OsmChange changeset)
+        public OsmDatabaseWithReplicationData(IOsmGeoSource baseSource)
         {
             this.baseSource = baseSource;
+        }
+
+        public void ApplyChangeset(OsmChange changeset)
+        {
             foreach (var change in changeset.Delete)
             {
                 switch (change.Type)
@@ -74,6 +78,11 @@ namespace OsmNightWatch
                         throw new NotImplementedException();
                 }
             }
+        }
+
+        public void BatchLoad(HashSet<long> nodeIds, HashSet<long> wayIds, HashSet<long> relationIds)
+        {
+            (baseSource as IOsmGeoBatchSource)?.BatchLoad(nodeIds, wayIds, relationIds);
         }
 
         public OsmGeo Get(OsmGeoType type, long id)

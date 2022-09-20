@@ -14,13 +14,12 @@ var sw = Stopwatch.StartNew();
 var path = @"C:\COSMOS\planet-220815.osm.pbf";
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
-var pbfDatabaseWithProcessedChangesets = new PbfDatabaseWithProcessedChangesets(pbfDb);
+var pbfDatabaseWithProcessedChangesets = new OsmDatabaseWithReplicationData(pbfDb);
 var analyzers = new IOsmAnalyzer[] { new AdminOpenPolygonAnalyzer() };
 
 foreach (var analyzer in analyzers)
 {
     var analzerHost = new AnalyzerHost(analyzer, pbfDatabaseWithProcessedChangesets);
-
 
 }
 

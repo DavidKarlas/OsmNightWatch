@@ -2,7 +2,7 @@
 using OsmNightWatch.PbfParsing;
 using OsmSharp;
 
-internal class PbfDatabase : IOsmGeoBatchSource
+internal class PbfDatabase : IOsmGeoFilterableSource
 {
     private PbfIndex index;
 
@@ -55,6 +55,27 @@ internal class PbfDatabase : IOsmGeoBatchSource
                 return relation;
             default:
                 throw new NotImplementedException();
+        }
+    }
+
+    public IEnumerable<OsmGeo> Filter(IEnumerable<ElementFilter> filters)
+    {
+        foreach (var group in filters.GroupBy(f => f.GeoType))
+        {
+            switch (group.Key)
+            {
+                case OsmGeoType.Node:
+                    throw new NotImplementedException();
+                case OsmGeoType.Way:
+                    throw new NotImplementedException();
+                case OsmGeoType.Relation:
+                    foreach (var relation in RelationsParser.Parse(group, index))
+                    {
+                        _relations[(long)relation.Id!] = relation;
+                        yield return relation;
+                    }
+                    break;
+            }
         }
     }
 }

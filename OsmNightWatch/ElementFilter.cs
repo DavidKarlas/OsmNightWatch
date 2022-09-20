@@ -18,4 +18,16 @@ namespace OsmNightWatch
             Tags = tags.ToList();
         }
     }
+
+    public class TagFilter
+    {
+        public string KeyFilter { get; }
+        public string? ValueFilter { get; }
+
+        public TagFilter(string keyFilter, string? valueFilter = null)
+        {
+            KeyFilter = keyFilter;
+            ValueFilter = valueFilter;
+        }
+    }
 }
