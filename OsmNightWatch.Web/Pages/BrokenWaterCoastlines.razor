@@ -1,14 +1,14 @@
-﻿@page "/OpenAdminPolygons"
+﻿@page "/BrokenWaterCoastlines"
 
-<PageTitle>Open Admin Polygons</PageTitle>
+<PageTitle>Broken Water Coastlines</PageTitle>
 
 @using OsmNightWatch.Web.Data
 @using OsmNightWatch.Lib
 @inject IssuesDataService IssuesDataService
 
-<h1>Open Admin Polygons</h1>
+<h1>Broken water coastlines</h1>
 
-<p>Here is a list of all open admin polygons.</p>
+<p>Here is a list of all broken water coastlines.</p>
 
 @if (issuesData == null)
 {
@@ -27,7 +27,7 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (var issue in issuesData.AllIssues.Where(issue => issue.IssueType == "OpenAdminPolygon"))
+            @foreach (var issue in issuesData.AllIssues.Where(issue => issue.IssueType == "BrokenCoastLine"))
             {
                 <tr>
                     <td>@issue.IssueType</td>
