@@ -2,78 +2,38 @@
 using OsmNightWatch.Analyzers;
 using OsmNightWatch.Analyzers.OpenPolygon;
 using OsmNightWatch.PbfParsing;
-using System.Buffers;
-using System.Diagnostics;
-using System.Globalization;
-using System.Reflection;
-using System.Runtime.Loader;
-using System.Text.Json;
+using OsmSharp.Replication;
 
-var dummy = new OsmNightWatch.Lib.IssuesData();
-dummy.DateTime = DateTime.Now;
-dummy.AllIssues = new List<OsmNightWatch.Lib.IssueData>();
-dummy.AllIssues.Add(new OsmNightWatch.Lib.IssueData()
-{
-    IssueType = "OpenAdminPolygon",
-    OsmType = "relation",
-    OsmId = "1854615"
-});
-dummy.AllIssues.Add(new OsmNightWatch.Lib.IssueData()
-{
-    IssueType = "OpenAdminPolygon",
-    OsmType = "relation",
-    OsmId = "8795605"
-});
-dummy.AllIssues.Add(new OsmNightWatch.Lib.IssueData()
-{
-    IssueType = "OpenAdminPolygon",
-    OsmType = "relation",
-    OsmId = "6064117"
-});
-
-dummy.AllIssues.Add(new OsmNightWatch.Lib.IssueData()
-{
-    IssueType = "BrokenCoastLine",
-    OsmType = "way",
-    OsmId = "90379436"
-});
-
-File.WriteAllText("issues.json", JsonSerializer.Serialize(dummy));
-
-return;
-
-HackOsmReplicationBug();
-
-var sw = Stopwatch.StartNew();
 var path = @"C:\COSMOS\planet-220815.osm.pbf";
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
-var pbfDatabaseWithProcessedChangesets = new OsmDatabaseWithReplicationData(pbfDb);
+var dbWithChagnes = new OsmDatabaseWithReplicationData(pbfDb);
 var analyzers = new IOsmAnalyzer[] { new AdminOpenPolygonAnalyzer() };
+var analzerHosts = analyzers.Select(analyzer => new AnalyzerHost(analyzer, dbWithChagnes)).ToArray();
+var kvDatabase = new KeyValueDatabase(Path.GetFullPath("KeyValueData"));
 
-foreach (var analyzer in analyzers)
+if(kvDatabase.GetSequenceNumber() is not long sequenceNumber)
 {
-    var analzerHost = new AnalyzerHost(analyzer, pbfDatabaseWithProcessedChangesets);
-
+    sequenceNumber = await Utils.GetSequenceNumberFromPbf(index);
+    
 }
 
-
-//var replicationData = new ReplicationData(path, index, @"C:\COSMOS\replication\");
-//await replicationData.InitializeAsync();
-
-Console.WriteLine(sw.Elapsed);
-
-static void HackOsmReplicationBug()
+while (true)
 {
-    AssemblyLoadContext.Default.Resolving += OnAssemblyResolve;
-
-    Assembly? OnAssemblyResolve(AssemblyLoadContext arg1, AssemblyName arg2)
+    var changeset = await ReplicationConfig.Minutely.DownloadDiff(sequenceNumber);
+    if (changeset is null)
     {
-        var assembly = Assembly.Load(new AssemblyName(arg2.Name));
-        if (assembly != null)
-        {
-            return assembly;
-        }
-        return null;
+        await Task.Delay(TimeSpan.FromMinutes(1));
+        continue;
     }
+    var newDb = new OsmDatabaseWithChangeset(dbWithChagnes, changeset);
+    using var tx = kvDatabase.BegingTransaction();
+
+
+
+    sequenceNumber++;
+    kvDatabase.SetSequenceNumber(sequenceNumber, tx);
+    dbWithChagnes.ApplyChangeset(changeset, tx);
+    tx.Commit();
 }
+

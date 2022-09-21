@@ -2,14 +2,14 @@
 using OsmNightWatch.PbfParsing;
 using OsmSharp.Db;
 
-internal class AnalyzerHost
+public class AnalyzerHost
 {
-    private IOsmAnalyzer analyzer;
+    public IOsmAnalyzer Analyzer { get; }
     private IOsmGeoSource geoSource;
 
     public AnalyzerHost(IOsmAnalyzer analyzer, IOsmGeoSource geoSource)
     {
-        this.analyzer = analyzer;
+        this.Analyzer = analyzer;
         this.geoSource = geoSource;
     }
 
