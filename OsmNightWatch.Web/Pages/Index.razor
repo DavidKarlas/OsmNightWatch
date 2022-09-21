@@ -5,6 +5,7 @@
 @using OsmNightWatch.Web.Data
 @using OsmNightWatch.Lib
 @inject IssuesDataService IssuesDataService
+@inject NavigationManager NavigationManager
 
 <h1>OSM Issues Overview</h1>
 
@@ -28,7 +29,7 @@ else
             {
                 numberOfIssues = @issuesData.AllIssues?.Where(issue => issue.IssueType == issueType).Count();
                 <tr style="color:@TextColor(@numberOfIssues.GetValueOrDefault());">
-                    <td>@issueType</td>
+                    <td style="cursor:pointer" @onclick="() => Navigate(issueType)">@issueType</td>
                     <td>@numberOfIssues</td>
                 </tr>
             }
@@ -40,6 +41,11 @@ else
     private IssuesData? issuesData;
     private int? numberOfIssues;
     private List<string> allIssueTypes = new() { "OpenAdminPolygon", "BrokenCoastLine", "BrokenTestExample" };
+    private Dictionary<string, string> pagesDict = new() {
+        {"OpenAdminPolygon", "OpenAdminPolygons" },
+        {"BrokenCoastLine", "BrokenWaterCoastlines" },
+        {"BrokenTestExample", "" }
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -56,4 +62,6 @@ else
                 return "red";
         }
     }
+
+    private void Navigate(string issueType) => NavigationManager.NavigateTo("/" + pagesDict[issueType]);
 }
