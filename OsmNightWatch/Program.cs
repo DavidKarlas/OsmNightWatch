@@ -9,13 +9,17 @@ var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
 var dbWithChagnes = new OsmDatabaseWithReplicationData(pbfDb);
 var analyzers = new IOsmAnalyzer[] { new AdminOpenPolygonAnalyzer() };
-var analzerHosts = analyzers.Select(analyzer => new AnalyzerHost(analyzer, dbWithChagnes)).ToArray();
-var kvDatabase = new KeyValueDatabase(Path.GetFullPath("KeyValueData"));
+var keyValueDatabase = new KeyValueDatabase(Path.GetFullPath("KeyValueData"));
 
-if(kvDatabase.GetSequenceNumber() is not long sequenceNumber)
+if (keyValueDatabase.GetSequenceNumber() is not long sequenceNumber)
 {
     sequenceNumber = await Utils.GetSequenceNumberFromPbf(index);
-    
+
+    foreach (var analyzer in analyzers)
+    {
+        var relevatThings = pbfDb.Filter(analyzer.GetFilters());
+        var issues = analyzer.Initialize(relevatThings, pbfDb, pbfDb);
+    }
 }
 
 while (true)
@@ -27,12 +31,15 @@ while (true)
         continue;
     }
     var newDb = new OsmDatabaseWithChangeset(dbWithChagnes, changeset);
-    using var tx = kvDatabase.BegingTransaction();
+    using var tx = keyValueDatabase.BegingTransaction();
 
-
+    foreach (var analyzer in analyzers)
+    {
+        var issues = analyzer.AnalyzeChanges(changeset, dbWithChagnes, newDb);
+    }
 
     sequenceNumber++;
-    kvDatabase.SetSequenceNumber(sequenceNumber, tx);
+    keyValueDatabase.SetSequenceNumber(sequenceNumber, tx);
     dbWithChagnes.ApplyChangeset(changeset, tx);
     tx.Commit();
 }

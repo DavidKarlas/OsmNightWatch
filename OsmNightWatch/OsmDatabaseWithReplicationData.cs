@@ -104,24 +104,24 @@ namespace OsmNightWatch
 
         public OsmGeo Get(OsmGeoType type, long id)
         {
-            switch (type)
-            {
-                case OsmGeoType.Node:
-                    var (foundNode, node) = Get( id);
-                    break;
-                case OsmGeoType.Way:
-                    if (changesetWays.TryGetValue(id, out var way))
-                    {
-                        return way;
-                    }
-                    break;
-                case OsmGeoType.Relation:
-                    if (changesetRelations.TryGetValue(id, out var relation))
-                    {
-                        return relation;
-                    }
-                    break;
-            }
+            //switch (type)
+            //{
+            //    case OsmGeoType.Node:
+            //        var (foundNode, node) = Get(id);
+            //        break;
+            //    case OsmGeoType.Way:
+            //        if (changesetWays.TryGetValue(id, out var way))
+            //        {
+            //            return way;
+            //        }
+            //        break;
+            //    case OsmGeoType.Relation:
+            //        if (changesetRelations.TryGetValue(id, out var relation))
+            //        {
+            //            return relation;
+            //        }
+            //        break;
+            //}
             return baseSource.Get(type, id);
         }
     }

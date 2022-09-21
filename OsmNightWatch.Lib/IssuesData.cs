@@ -16,7 +16,7 @@
 
         public string OsmType { get; set; }
 
-        public string OsmId { get; set; }
+        public long OsmId { get; set; }
 
         public string Details { get; set; }
     }

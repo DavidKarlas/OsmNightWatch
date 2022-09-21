@@ -10,6 +10,7 @@ namespace OsmNightWatch
     public class ElementFilter
     {
         public OsmGeoType GeoType { get; }
+        
         public List<TagFilter> Tags { get; }
 
         public ElementFilter(OsmGeoType geoType, IEnumerable<TagFilter> tags)
