@@ -24,11 +24,11 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (var issueGroup in issuesData.AllIssues.GroupBy(issue => issue.IssueType))
+            @foreach (var issueType in allIssueTypes)
             {
-                numberOfIssues = @issueGroup.Count();
+                numberOfIssues = @issuesData.AllIssues?.Where(issue => issue.IssueType == issueType).Count();
                 <tr style="color:@TextColor(@numberOfIssues.GetValueOrDefault());">
-                    <td>@issueGroup.Key</td>
+                    <td>@issueType</td>
                     <td>@numberOfIssues</td>
                 </tr>
             }
@@ -39,6 +39,7 @@ else
 @code {
     private IssuesData? issuesData;
     private int? numberOfIssues;
+    private List<string> allIssueTypes = new() { "OpenAdminPolygon", "BrokenCoastLine", "BrokenTestExample" };
 
     protected override async Task OnInitializedAsync()
     {
