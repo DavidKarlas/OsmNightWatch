@@ -67,7 +67,12 @@ internal class PbfDatabase : IOsmGeoFilterableSource
                 case OsmGeoType.Node:
                     throw new NotImplementedException();
                 case OsmGeoType.Way:
-                    throw new NotImplementedException();
+                    foreach (var way in WaysParser.Parse(group, index))
+                    {
+                        _ways[(long)way.Id!] = way;
+                        yield return way;
+                    }
+                    break;
                 case OsmGeoType.Relation:
                     foreach (var relation in RelationsParser.Parse(group, index))
                     {

@@ -4,7 +4,7 @@ using OsmNightWatch.Analyzers.OpenPolygon;
 using OsmNightWatch.PbfParsing;
 using OsmSharp.Replication;
 
-var path = @"C:\COSMOS\planet-220815.osm.pbf";
+var path = @"C:\Users\davkar\Downloads\australia-oceania-latest.osm.pbf";
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
 var dbWithChagnes = new OsmDatabaseWithReplicationData(pbfDb);

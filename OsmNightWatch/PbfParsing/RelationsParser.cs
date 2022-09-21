@@ -91,7 +91,7 @@ namespace OsmNightWatch.PbfParsing
             var stringIdFilters = new Dictionary<int, HashSet<int>?>();
             if (tagFilters != null)
             {
-                foreach (var item in tagFilters.Utf8RelationsTagsFilter)
+                foreach (var item in tagFilters.Utf8TagsFilter)
                 {
                     if (item.TagValues.Count == 0)
                     {

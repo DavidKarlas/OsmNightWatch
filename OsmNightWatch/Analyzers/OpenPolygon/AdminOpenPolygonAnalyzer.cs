@@ -36,7 +36,8 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
 
         public IEnumerable<ElementFilter> GetFilters()
         {
-            yield return new ElementFilter(OsmGeoType.Relation, new[] { new TagFilter("boundary", "administrative") });
+            //yield return new ElementFilter(OsmGeoType.Relation, new[] { new TagFilter("boundary", "administrative") });
+            yield return new ElementFilter(OsmGeoType.Way, new[] { new TagFilter("natural", "coastline") });
         }
 
         public IEnumerable<IssueData> Initialize(IEnumerable<OsmGeo> relevatThings, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource)
