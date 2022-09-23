@@ -9,6 +9,6 @@ namespace OsmNightWatch
 {
     public interface IOsmGeoFilterableSource : IOsmGeoBatchSource
     {
-        IEnumerable<OsmGeo> Filter(IEnumerable<ElementFilter> filters);
+        IEnumerable<OsmGeo> Filter(FilterSettings filterSettings);
     }
 }

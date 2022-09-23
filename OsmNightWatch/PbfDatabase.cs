@@ -67,9 +67,9 @@ internal class PbfDatabase : IOsmGeoFilterableSource
         }
     }
 
-    public IEnumerable<OsmGeo> Filter(IEnumerable<ElementFilter> filters)
+    public IEnumerable<OsmGeo> Filter(FilterSettings filterSettings)
     {
-        foreach (var group in filters.GroupBy(f => f.GeoType))
+        foreach (var group in filterSettings.Filters.GroupBy(f => f.GeoType))
         {
             switch (group.Key)
             {

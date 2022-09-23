@@ -9,7 +9,7 @@ namespace OsmNightWatch.Analyzers
     {
         string AnalyzerName { get; }
 
-        IEnumerable<ElementFilter> GetFilters();
+        FilterSettings FilterSettings { get; }
 
         IEnumerable<IssueData> AnalyzeChanges(OsmChange changeset, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource);
 

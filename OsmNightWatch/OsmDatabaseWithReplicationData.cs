@@ -142,32 +142,29 @@ namespace OsmNightWatch
             BinarySerializer.Append(ms, element);
             tx.Put(db, BitConverter.GetBytes((long)element.Id!), ms.ToArray());
         }
-        //private (bool Found, OsmGeo Element) Get(LightningTransaction tx, LightningDatabase db, long elementId)
-        //{
-        //    var (code, key, value) = tx.Get(db, BitConverter.GetBytes(elementId));
-        //    if (code == MDBResultCode.Success)
-        //    {
-        //        ms.Position = 0;
-        //        var span = value.AsSpan();
-        //        ms.Write(span);
-        //        return (true, BinarySerializer.ReadOsmGeo(ms));
-        //    }
-        //    return (false, null);
-        //}
 
         public void BatchLoad(HashSet<long> nodeIds, HashSet<long> wayIds, HashSet<long> relationIds)
         {
             (baseSource as IOsmGeoBatchSource)?.BatchLoad(nodeIds, wayIds, relationIds);
         }
 
-        public IEnumerable<OsmGeo> Filter(IEnumerable<ElementFilter> filters)
+        Dictionary<FilterSettings, List<OsmGeo>> _cache = new();
+
+        public IEnumerable<OsmGeo> Filter(FilterSettings filterSettings)
         {
+            var filters = filterSettings.Filters;
             var nodeFilter = filters.Where(f => f.GeoType == OsmGeoType.Node).SingleOrDefault();
             var wayFilter = filters.Where(f => f.GeoType == OsmGeoType.Way).SingleOrDefault();
             var relationFilter = filters.Where(f => f.GeoType == OsmGeoType.Relation).SingleOrDefault();
+            
             if (baseSource is IOsmGeoFilterableSource baseFilterableSource)
             {
-                foreach (var baseResult in baseFilterableSource.Filter(filters))
+                if(!_cache.TryGetValue(filterSettings, out var results))
+                {
+                    _cache[filterSettings] = results = baseFilterableSource.Filter(filterSettings).ToList();
+                }
+
+                foreach (var baseResult in results)
                 {
                     switch (baseResult)
                     {

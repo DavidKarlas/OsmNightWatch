@@ -40,10 +40,13 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
             return false;
         }
 
-        public IEnumerable<ElementFilter> GetFilters()
+        public FilterSettings FilterSettings { get; } = new FilterSettings()
         {
-            yield return new ElementFilter(OsmGeoType.Relation, new[] { new TagFilter("boundary", "administrative") });
-        }
+            Filters = new List<ElementFilter>()
+            {
+                new ElementFilter(OsmGeoType.Relation, new[] { new TagFilter("boundary", "administrative") })
+            }
+        };
 
         public IEnumerable<IssueData> Initialize(IEnumerable<OsmGeo> relevatThings, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource)
         {

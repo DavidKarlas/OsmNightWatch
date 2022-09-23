@@ -23,10 +23,13 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             { 3, "Way not forming a proper ring" }
         };
 
-        public IEnumerable<ElementFilter> GetFilters()
+        public FilterSettings FilterSettings { get; } = new FilterSettings()
         {
-            yield return new ElementFilter(OsmGeoType.Way, new[] { new TagFilter("natural", "coastline") });
-        }
+            Filters = new List<ElementFilter>()
+            {
+                new ElementFilter(OsmGeoType.Way, new[] { new TagFilter("natural", "coastline") })
+            }
+        };
 
         public IEnumerable<IssueData> Initialize(IEnumerable<OsmGeo> relevantThings, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource)
         {

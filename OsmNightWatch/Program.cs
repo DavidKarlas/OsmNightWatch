@@ -9,7 +9,7 @@ using OsmSharp.Replication;
 var path = @"C:\COSMOS\planet-220829.osm.pbf";
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
-var analyzers = new IOsmAnalyzer[] { /*new AdminOpenPolygonAnalyzer(),new BrokenCoastlineAnalyzer()*/  };
+var analyzers = new IOsmAnalyzer[] { /*new AdminOpenPolygonAnalyzer(),*/new BrokenCoastlineAnalyzer() };
 var keyValueDatabase = new KeyValueDatabase(Path.GetFullPath("KeyValueData"));
 var dbWithChagnes = new OsmDatabaseWithReplicationData(pbfDb, keyValueDatabase);
 
@@ -42,7 +42,7 @@ while (true)
     foreach (var analyzer in analyzers)
     {
         Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}.");
-        var relevatThings = dbWithChagnes.Filter(analyzer.GetFilters()).ToArray();
+        var relevatThings = dbWithChagnes.Filter(analyzer.FilterSettings).ToArray();
         Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevatThings.Length}.");
         var issues = analyzer.Initialize(relevatThings, dbWithChagnes, dbWithChagnes).ToList();
         Console.WriteLine($"{DateTime.Now} Found {issues.Count} issues.");

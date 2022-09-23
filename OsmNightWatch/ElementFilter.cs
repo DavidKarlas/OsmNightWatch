@@ -8,6 +8,11 @@ using System.Threading.Tasks;
 
 namespace OsmNightWatch
 {
+    public class FilterSettings
+    {
+        public List<ElementFilter> Filters { get; init; } = new List<ElementFilter>();
+    }
+
     public class ElementFilter
     {
         public OsmGeoType GeoType { get; }
