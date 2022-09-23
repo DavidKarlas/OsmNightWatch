@@ -15,19 +15,28 @@ internal class PbfDatabase : IOsmGeoFilterableSource
         this.index = index;
     }
 
-    public void BatchLoad(HashSet<long> nodeIds, HashSet<long> wayIds, HashSet<long> relationIds)
+    public void BatchLoad(HashSet<long>? nodeIds = null, HashSet<long>? wayIds = null, HashSet<long>? relationIds = null)
     {
-        foreach (var node in NodesParser.LoadNodes(nodeIds, index))
+        if (nodeIds != null)
         {
-            _nodes[node.Key] = node.Value;
+            foreach (var node in NodesParser.LoadNodes(nodeIds, index))
+            {
+                _nodes[node.Key] = node.Value;
+            }
         }
-        foreach (var way in WaysParser.LoadWays(wayIds, index))
+        if (wayIds != null)
         {
-            _ways[way.Key] = way.Value;
+            foreach (var way in WaysParser.LoadWays(wayIds, index))
+            {
+                _ways[way.Key] = way.Value;
+            }
         }
-        foreach (var relation in RelationsParser.LoadRelations(relationIds, index))
+        if (relationIds != null)
         {
-            _relations[relation.Key] = relation.Value;
+            foreach (var relation in RelationsParser.LoadRelations(relationIds, index))
+            {
+                _relations[relation.Key] = relation.Value;
+            }
         }
     }
 

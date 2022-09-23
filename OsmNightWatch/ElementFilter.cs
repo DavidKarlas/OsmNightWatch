@@ -1,4 +1,5 @@
 ﻿using OsmSharp;
+using OsmSharp.Tags;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,6 +19,18 @@ namespace OsmNightWatch
             GeoType = geoType;
             Tags = tags.ToList();
         }
+
+        public bool Matches(OsmGeo element)
+        {
+            if (element.Type != GeoType)
+                throw new InvalidOperationException();
+            foreach (var tagFilter in Tags)
+            {
+                if (element.Tags == null || !tagFilter.Matches(element.Tags))
+                    return false;
+            }
+            return true;
+        }
     }
 
     public class TagFilter
@@ -29,6 +42,17 @@ namespace OsmNightWatch
         {
             KeyFilter = keyFilter;
             ValueFilter = valueFilter;
+        }
+
+        public bool Matches(TagsCollectionBase tags)
+        {
+            if (tags.TryGetValue(KeyFilter, out var value))
+            {
+                if (ValueFilter == null)
+                    return true;
+                return value == ValueFilter;
+            }
+            return false;
         }
     }
 }

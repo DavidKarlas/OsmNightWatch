@@ -4,16 +4,20 @@ using OsmSharp.Db;
 
 namespace OsmNightWatch
 {
-    public class OsmDatabaseWithChangeset : IOsmGeoSource
+    public class OsmDatabaseWithChangeset : IOsmGeoFilterableSource
     {
         private readonly IOsmGeoSource baseSource;
         private Dictionary<long, Relation?> changesetRelations = new();
         private Dictionary<long, Way?> changesetWays = new();
         private Dictionary<long, Node?> changesetNodes = new();
 
-        public OsmDatabaseWithChangeset(IOsmGeoSource baseSource, OsmChange changeset)
+        public OsmDatabaseWithChangeset(IOsmGeoSource baseSource)
         {
             this.baseSource = baseSource;
+        }
+
+        public void AppyChangeset(OsmChange changeset)
+        {
             foreach (var change in changeset.Delete)
             {
                 switch (change.Type)
@@ -72,6 +76,65 @@ namespace OsmNightWatch
                         break;
                     default:
                         throw new NotImplementedException();
+                }
+            }
+        }
+
+        public void BatchLoad(HashSet<long>? nodeIds = null, HashSet<long>? wayIds = null, HashSet<long>? relationIds = null)
+        {
+            (baseSource as IOsmGeoBatchSource)?.BatchLoad(nodeIds, wayIds, relationIds);
+        }
+
+        public IEnumerable<OsmGeo> Filter(IEnumerable<ElementFilter> filters)
+        {
+            var nodeFilter = filters.Where(f => f.GeoType == OsmGeoType.Node).SingleOrDefault();
+            var wayFilter = filters.Where(f => f.GeoType == OsmGeoType.Way).SingleOrDefault();
+            var relationFilter = filters.Where(f => f.GeoType == OsmGeoType.Relation).SingleOrDefault();
+            if (baseSource is IOsmGeoFilterableSource baseFilterableSource)
+            {
+                foreach (var baseResult in baseFilterableSource.Filter(filters))
+                {
+                    switch (baseResult)
+                    {
+                        case Node node:
+                            if (!changesetNodes.ContainsKey(node.Id!.Value))
+                                yield return node;
+                            break;
+                        case Way way:
+                            if (!changesetWays.ContainsKey(way.Id!.Value))
+                                yield return way;
+                            break;
+                        case Relation relation:
+                            if (!changesetRelations.ContainsKey(relation.Id!.Value))
+                                yield return relation;
+                            break;
+                        default:
+                            throw new NotImplementedException();
+                    }
+                }
+            }
+            if (nodeFilter != null)
+            {
+                foreach (var node in changesetNodes.Values)
+                {
+                    if (node != null && nodeFilter.Matches(node))
+                        yield return node;
+                }
+            }
+            if (wayFilter != null)
+            {
+                foreach (var way in changesetWays.Values)
+                {
+                    if (way != null && wayFilter.Matches(way))
+                        yield return way;
+                }
+            }
+            if (relationFilter != null)
+            {
+                foreach (var relation in changesetRelations.Values)
+                {
+                    if (relation != null && relationFilter.Matches(relation))
+                        yield return relation;
                 }
             }
         }

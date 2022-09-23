@@ -1,5 +1,6 @@
 ﻿using OsmSharp;
 using OsmSharp.Db;
+using System.Collections.Generic;
 
 namespace OsmNightWatch.Analyzers.OpenPolygon
 {
@@ -12,6 +13,8 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
 
             public Graph(Way way)
             {
+                
+
                 AllNodes.UnionWith(way.Nodes);
                 Ways.Add(way);
             }

@@ -27,21 +27,30 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
             {
                 return false;
             }
+            var sw = Stopwatch.StartNew();
             if (new RelationValidationTest().Visit(relation, newOsmSource))
             {
                 return true;
+            }
+            sw.Stop();
+            if (sw.ElapsedMilliseconds > 1000)
+            {
+                Console.WriteLine($"Relation {relation.Id} took {sw.ElapsedMilliseconds}ms");
             }
             return false;
         }
 
         public IEnumerable<ElementFilter> GetFilters()
         {
-            //yield return new ElementFilter(OsmGeoType.Relation, new[] { new TagFilter("boundary", "administrative") });
-            yield return new ElementFilter(OsmGeoType.Way, new[] { new TagFilter("natural", "coastline") });
+            yield return new ElementFilter(OsmGeoType.Relation, new[] { new TagFilter("boundary", "administrative") });
         }
 
         public IEnumerable<IssueData> Initialize(IEnumerable<OsmGeo> relevatThings, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource)
         {
+            Console.WriteLine("Starting batch load.");
+            Utils.BatchLoad(relevatThings, (IOsmGeoBatchSource)newOsmSource, true, false);
+            Console.WriteLine("Finished batch load.");
+
             foreach (var relevatThing in relevatThings)
             {
                 if (relevatThing is Relation relation)

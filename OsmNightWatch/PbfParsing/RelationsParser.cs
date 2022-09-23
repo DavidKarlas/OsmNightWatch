@@ -53,7 +53,7 @@ namespace OsmNightWatch.PbfParsing
 
         public static Dictionary<long, Relation> LoadRelations(HashSet<long> relationsToLoad, PbfIndex index)
         {
-            var fileOffsets = index.CaclulateFileOffsets(relationsToLoad, OsmGeoType.Way);
+            var fileOffsets = index.CaclulateFileOffsets(relationsToLoad, OsmGeoType.Relation);
             var relationsBag = new ConcurrentBag<Relation>();
             ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer) =>
             {
@@ -102,9 +102,11 @@ namespace OsmNightWatch.PbfParsing
                         var hashset = new HashSet<int>();
                         foreach (var tagValue in item.TagValues)
                         {
-                            hashset.Add(utf8ToIdMappings[tagValue]);
+                            if (utf8ToIdMappings.TryGetValue(tagValue, out var val))
+                                hashset.Add(val);
                         }
-                        stringIdFilters.Add(utf8ToIdMappings[item.TagKey], hashset);
+                        if (utf8ToIdMappings.TryGetValue(item.TagKey, out var val2))
+                            stringIdFilters.Add(val2, hashset);
                     }
                 }
             }

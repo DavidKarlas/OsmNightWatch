@@ -340,7 +340,6 @@ namespace OsmNightWatch.PbfParsing
                     result.Add(newBucket);
                 }
             }
-            Console.WriteLine($"Created {result.Count} buckets from {offsets.Length} offsets.");
             return result;
         }
 
