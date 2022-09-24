@@ -15,13 +15,13 @@ namespace OsmNightWatch
 {
     static class Utils
     {
-        public static Task<long> GetSequenceNumberFromPbf(PbfIndex pbfIndex)
+        public static Task<long> GetSequenceNumberFromPbf(PbfIndex pbfIndex, ReplicationConfig config)
         {
             var offset = pbfIndex.GetLastNodeOffset();
             var lastNodesWithMeta = NodesParser.LoadNodesWithMetadata(pbfIndex.PbfPath, offset).Last();
             if (lastNodesWithMeta.TimeStamp is not DateTime datetime)
                 throw new NotSupportedException();
-            return ReplicationConfig.Minutely.GuessSequenceNumberAt(datetime);
+            return config.GuessSequenceNumberAt(datetime);
         }
 
         public static void BatchLoad(IEnumerable<OsmGeo> relevatThings, IOsmGeoBatchSource osmSource, bool ways, bool nodes)

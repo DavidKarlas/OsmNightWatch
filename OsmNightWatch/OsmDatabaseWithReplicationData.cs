@@ -17,7 +17,7 @@ namespace OsmNightWatch
         public OsmDatabaseWithReplicationData(IOsmGeoSource baseSource, KeyValueDatabase keyValueDatabase)
         {
             this.baseSource = baseSource;
-            LoadChanges(keyValueDatabase);
+            //LoadChanges(keyValueDatabase);
         }
 
         private void LoadChanges(KeyValueDatabase keyValueDatabase)
@@ -97,22 +97,22 @@ namespace OsmNightWatch
                     case OsmGeoType.Node:
                         if (change.Id is long idNode)
                         {
-                            tx.Put(dbNodes, BitConverter.GetBytes(idNode), Array.Empty<byte>());
+                            //tx.Put(dbNodes, BitConverter.GetBytes(idNode), Array.Empty<byte>()).ThrowOnError();
                             changesetNodes[idNode] = null;
                         }
                         break;
                     case OsmGeoType.Way:
                         if (change.Id is long idWay)
                         {
-                            tx.Put(dbWays, BitConverter.GetBytes(idWay), Array.Empty<byte>());
+                            //tx.Put(dbWays, BitConverter.GetBytes(idWay), Array.Empty<byte>()).ThrowOnError();
                             changesetWays[idWay] = null;
                         }
                         break;
                     case OsmGeoType.Relation:
                         if (change.Id is long idRelation)
                         {
+                            //tx.Put(dbRelations, BitConverter.GetBytes(idRelation), Array.Empty<byte>()).ThrowOnError();
                             changesetRelations[idRelation] = null;
-                            tx.Put(dbRelations, BitConverter.GetBytes(idRelation), Array.Empty<byte>());
                         }
                         break;
                     default:
@@ -125,22 +125,22 @@ namespace OsmNightWatch
 
         private void Put(LightningTransaction tx, LightningDatabase db, OsmGeo element)
         {
-            switch (element.Type)
-            {
-                case OsmGeoType.Node:
-                    changesetNodes[(long)element.Id!] = (Node)element;
-                    break;
-                case OsmGeoType.Way:
-                    changesetWays[(long)element.Id!] = (Way)element;
-                    break;
-                case OsmGeoType.Relation:
-                    changesetRelations[(long)element.Id!] = (Relation)element;
-                    break;
-            }
+            //switch (element.Type)
+            //{
+            //    case OsmGeoType.Node:
+            //        changesetNodes[(long)element.Id!] = (Node)element;
+            //        break;
+            //    case OsmGeoType.Way:
+            //        changesetWays[(long)element.Id!] = (Way)element;
+            //        break;
+            //    case OsmGeoType.Relation:
+            //        changesetRelations[(long)element.Id!] = (Relation)element;
+            //        break;
+            //}
 
-            ms.Position = 0;
-            BinarySerializer.Append(ms, element);
-            tx.Put(db, BitConverter.GetBytes((long)element.Id!), ms.ToArray());
+            //ms.Position = 0;
+            //BinarySerializer.Append(ms, element);
+            //tx.Put(db, BitConverter.GetBytes((long)element.Id!).AsSpan(), ms.ToArray().AsSpan(0, (int)ms.Position)).ThrowOnError();
         }
 
         public void BatchLoad(HashSet<long> nodeIds, HashSet<long> wayIds, HashSet<long> relationIds)
@@ -156,10 +156,10 @@ namespace OsmNightWatch
             var nodeFilter = filters.Where(f => f.GeoType == OsmGeoType.Node).SingleOrDefault();
             var wayFilter = filters.Where(f => f.GeoType == OsmGeoType.Way).SingleOrDefault();
             var relationFilter = filters.Where(f => f.GeoType == OsmGeoType.Relation).SingleOrDefault();
-            
+
             if (baseSource is IOsmGeoFilterableSource baseFilterableSource)
             {
-                if(!_cache.TryGetValue(filterSettings, out var results))
+                if (!_cache.TryGetValue(filterSettings, out var results))
                 {
                     _cache[filterSettings] = results = baseFilterableSource.Filter(filterSettings).ToList();
                 }
