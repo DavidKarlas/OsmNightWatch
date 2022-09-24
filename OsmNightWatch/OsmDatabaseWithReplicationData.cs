@@ -125,18 +125,18 @@ namespace OsmNightWatch
 
         private void Put(LightningTransaction tx, LightningDatabase db, OsmGeo element)
         {
-            //switch (element.Type)
-            //{
-            //    case OsmGeoType.Node:
-            //        changesetNodes[(long)element.Id!] = (Node)element;
-            //        break;
-            //    case OsmGeoType.Way:
-            //        changesetWays[(long)element.Id!] = (Way)element;
-            //        break;
-            //    case OsmGeoType.Relation:
-            //        changesetRelations[(long)element.Id!] = (Relation)element;
-            //        break;
-            //}
+            switch (element.Type)
+            {
+                case OsmGeoType.Node:
+                    changesetNodes[(long)element.Id!] = (Node)element;
+                    break;
+                case OsmGeoType.Way:
+                    changesetWays[(long)element.Id!] = (Way)element;
+                    break;
+                case OsmGeoType.Relation:
+                    changesetRelations[(long)element.Id!] = (Relation)element;
+                    break;
+            }
 
             //ms.Position = 0;
             //BinarySerializer.Append(ms, element);
