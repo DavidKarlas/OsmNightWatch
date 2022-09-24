@@ -1,9 +1,67 @@
 ﻿@page "/"
 
-<PageTitle>Index</PageTitle>
+<PageTitle>OSM Issues Overview</PageTitle>
 
-<h1>Hello, world!</h1>
+@using OsmNightWatch.Web.Data
+@using OsmNightWatch.Lib
+@inject IssuesDataService IssuesDataService
+@inject NavigationManager NavigationManager
 
-Welcome to your new app.
+<h1>OSM Issues Overview</h1>
 
-<SurveyPrompt Title="How is Blazor working for you?" />
+<p>Here is a list of current OSM issues. Let's fix them all.</p>
+
+@if (issuesData == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Issue type</th>
+                <th>Number of issues</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var issueType in allIssueTypes)
+            {
+                numberOfIssues = @issuesData.AllIssues?.Where(issue => issue.IssueType == issueType).Count();
+                <tr style="color:@TextColor(@numberOfIssues.GetValueOrDefault());">
+                    <td style="cursor:pointer" @onclick="() => Navigate(issueType)">@issueType</td>
+                    <td>@numberOfIssues</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private IssuesData? issuesData;
+    private int? numberOfIssues;
+    private List<string> allIssueTypes = new() { "OpenAdminPolygon", "BrokenCoastLine", "BrokenTestExample" };
+    private Dictionary<string, string> pagesDict = new() {
+        {"OpenAdminPolygon", "OpenAdminPolygons" },
+        {"BrokenCoastLine", "BrokenWaterCoastlines" },
+        {"BrokenTestExample", "" }
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        issuesData = await IssuesDataService.GetIssuesDataAsync(DateTime.Now);
+    }
+
+    private string TextColor(int nunberOfIssues)
+    {
+        switch (nunberOfIssues)
+        {
+            case 0:
+                return "green";
+            default:
+                return "red";
+        }
+    }
+
+    private void Navigate(string issueType) => NavigationManager.NavigateTo("/" + pagesDict[issueType]);
+}
