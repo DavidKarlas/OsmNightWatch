@@ -12,7 +12,7 @@ namespace OsmNightWatch
         private Dictionary<long, Way?> changesetWays = new();
         private Dictionary<long, Node?> changesetNodes = new();
 
-        public OsmDatabaseWithReplicationData(IOsmGeoSource baseSource, KeyValueDatabase keyValueDatabase)
+        public OsmDatabaseWithReplicationData(IOsmGeoSource baseSource)
         {
             this.baseSource = baseSource;
         }
