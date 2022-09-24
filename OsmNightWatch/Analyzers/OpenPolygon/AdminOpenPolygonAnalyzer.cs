@@ -14,7 +14,7 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
 {
     public class AdminOpenPolygonAnalyzer : IOsmAnalyzer
     {
-        public string AnalyzerName => nameof(AdminOpenPolygonAnalyzer);
+        public string AnalyzerName => "OpenAdminPolygon";
 
         private bool AnalyzeRelation(Relation relation, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource)
         {

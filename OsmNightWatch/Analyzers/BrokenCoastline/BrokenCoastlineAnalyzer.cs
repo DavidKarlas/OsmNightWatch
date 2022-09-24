@@ -14,7 +14,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
 {
     public class BrokenCoastlineAnalyzer : IOsmAnalyzer
     {
-        public string AnalyzerName => nameof(BrokenCoastlineAnalyzer);
+        public string AnalyzerName => "BrokenCoastLine";
 
         public Dictionary<int, string> IssueDetails = new()
         {
