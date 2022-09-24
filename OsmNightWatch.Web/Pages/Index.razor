@@ -40,11 +40,10 @@ else
 @code {
     private IssuesData? issuesData;
     private int? numberOfIssues;
-    private List<string> allIssueTypes = new() { "OpenAdminPolygon", "BrokenCoastLine", "BrokenTestExample" };
+    private List<string> allIssueTypes = new() { "OpenAdminPolygon", "BrokenCoastLine" };
     private Dictionary<string, string> pagesDict = new() {
         {"OpenAdminPolygon", "OpenAdminPolygons" },
-        {"BrokenCoastLine", "BrokenWaterCoastlines" },
-        {"BrokenTestExample", "" }
+        {"BrokenCoastLine", "BrokenWaterCoastlines" }
     };
 
     protected override async Task OnInitializedAsync()
