@@ -20,14 +20,17 @@ var keyValueDatabase = new KeyValueDatabase(Path.GetFullPath("KeyValueData"));
 var dbWithChagnes = new OsmDatabaseWithReplicationData(pbfDb, keyValueDatabase);
 var pbfTimestamp = Utils.GetLatestTimtestampFromPbf(index);
 Console.WriteLine($"PBF timestamp {pbfTimestamp}.");
-var enumerator = new CatchupReplicationDiffEnumerator(pbfTimestamp);
+IReplicationDiffEnumerator enumerator = new CatchupReplicationDiffEnumerator(pbfTimestamp);
 while (true)
 {
-    var diff = await enumerator.MoveNext();
-    if (diff == false)
+    if (await enumerator.MoveNext() == false)
     {
         Console.WriteLine($"Failed to iterate enumerator... Sleeping 1 minute.");
         await Task.Delay(TimeSpan.FromMinutes(1));
+        if (enumerator.State.Config.Period == ReplicationConfig.Minutely.Period && enumerator is CatchupReplicationDiffEnumerator)
+        {
+            enumerator = await ReplicationConfig.Minutely.GetDiffEnumerator(enumerator.State.SequenceNumber);
+        }
         continue;
     }
     var replicationState = enumerator.State;
