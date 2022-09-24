@@ -100,8 +100,8 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                 {
                     foreach (var nodeLast in graph.DuplicateLastNodes.Keys)
                     {
-                        Way commonWay = graph.DuplicateFirstNodes[nodeFirst].Intersect(graph.DuplicateLastNodes[nodeLast]).FirstOrDefault();
-                        if (commonWay != new Way())
+                        var commonWay = graph.DuplicateFirstNodes[nodeFirst].Intersect(graph.DuplicateLastNodes[nodeLast]).FirstOrDefault();
+                        if (commonWay != null)
                         {
                             found.Add((commonWay, 2));
                             graph.FirstNodes.Remove(nodeFirst);
