@@ -58,7 +58,7 @@ while (true)
     nextSequenceId++;
     keyValueDatabase.SetSequenceNumber(nextSequenceId, tx);
     var code = tx.Commit();
-    IssuesUploader.Upload(data);
+    await IssuesUploader.UploadAsync(data);
 }
 
 
