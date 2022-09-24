@@ -1,8 +1,6 @@
-﻿using LightningDB;
-using OsmSharp;
+﻿using OsmSharp;
 using OsmSharp.Changesets;
 using OsmSharp.Db;
-using OsmSharp.IO.Binary;
 
 namespace OsmNightWatch
 {
@@ -17,78 +15,17 @@ namespace OsmNightWatch
         public OsmDatabaseWithReplicationData(IOsmGeoSource baseSource, KeyValueDatabase keyValueDatabase)
         {
             this.baseSource = baseSource;
-            //LoadChanges(keyValueDatabase);
         }
 
-        private void LoadChanges(KeyValueDatabase keyValueDatabase)
+        public void ApplyChangeset(OsmChange changeset)
         {
-            using var tx = keyValueDatabase.BeginTransaction();
-            using var dbNodes = tx.OpenDatabase("ChangesetsNodes", new DatabaseConfiguration() { Flags = DatabaseOpenFlags.Create });
-            using var dbWays = tx.OpenDatabase("ChangesetsWays", new DatabaseConfiguration() { Flags = DatabaseOpenFlags.Create });
-            using var dbRelations = tx.OpenDatabase("ChangesetsRelations", new DatabaseConfiguration() { Flags = DatabaseOpenFlags.Create });
-            using var cursorNodes = tx.CreateCursor(dbNodes);
-            using var cursorWays = tx.CreateCursor(dbWays);
-            using var cursorRelations = tx.CreateCursor(dbRelations);
-            foreach (var node in cursorNodes.AsEnumerable())
-            {
-                changesetNodes.Add(BitConverter.ToInt64(node.Item1.AsSpan()), node.Item2.AsSpan().Length == 0 ? null : Decode(node.Item2.AsSpan()) as Node);
-            }
-            foreach (var way in cursorWays.AsEnumerable())
-            {
-                changesetWays.Add(BitConverter.ToInt64(way.Item1.AsSpan()), way.Item2.AsSpan().Length == 0 ? null : Decode(way.Item2.AsSpan()) as Way);
-            }
-            foreach (var relation in cursorRelations.AsEnumerable())
-            {
-                changesetRelations.Add(BitConverter.ToInt64(relation.Item1.AsSpan()), relation.Item2.AsSpan().Length == 0 ? null : Decode(relation.Item2.AsSpan()) as Relation);
-            }
-        }
-
-        private OsmGeo Decode(ReadOnlySpan<byte> readOnlySpan)
-        {
-            ms.Position = 0;
-            ms.Write(readOnlySpan);
-            ms.Position = 0;
-            return BinarySerializer.ReadOsmGeo(ms);
-        }
-
-        public void ApplyChangeset(OsmChange changeset, LightningDB.LightningTransaction tx)
-        {
-            var dbNodes = tx.OpenDatabase("ChangesetsNodes", new DatabaseConfiguration() { Flags = DatabaseOpenFlags.Create });
-            var dbWays = tx.OpenDatabase("ChangesetsWays", new DatabaseConfiguration() { Flags = DatabaseOpenFlags.Create });
-            var dbRelations = tx.OpenDatabase("ChangesetsRelations", new DatabaseConfiguration() { Flags = DatabaseOpenFlags.Create });
             foreach (var change in changeset.Create)
             {
-                switch (change.Type)
-                {
-                    case OsmGeoType.Node:
-                        Put(tx, dbNodes, change);
-                        break;
-                    case OsmGeoType.Way:
-                        Put(tx, dbWays, change);
-                        break;
-                    case OsmGeoType.Relation:
-                        Put(tx, dbRelations, change);
-                        break;
-                    default:
-                        throw new NotImplementedException();
-                }
+                Put(change);
             }
             foreach (var change in changeset.Modify)
             {
-                switch (change.Type)
-                {
-                    case OsmGeoType.Node:
-                        Put(tx, dbNodes, change);
-                        break;
-                    case OsmGeoType.Way:
-                        Put(tx, dbWays, change);
-                        break;
-                    case OsmGeoType.Relation:
-                        Put(tx, dbRelations, change);
-                        break;
-                    default:
-                        throw new NotImplementedException();
-                }
+                Put(change);
             }
             foreach (var change in changeset.Delete)
             {
@@ -97,21 +34,18 @@ namespace OsmNightWatch
                     case OsmGeoType.Node:
                         if (change.Id is long idNode)
                         {
-                            //tx.Put(dbNodes, BitConverter.GetBytes(idNode), Array.Empty<byte>()).ThrowOnError();
                             changesetNodes[idNode] = null;
                         }
                         break;
                     case OsmGeoType.Way:
                         if (change.Id is long idWay)
                         {
-                            //tx.Put(dbWays, BitConverter.GetBytes(idWay), Array.Empty<byte>()).ThrowOnError();
                             changesetWays[idWay] = null;
                         }
                         break;
                     case OsmGeoType.Relation:
                         if (change.Id is long idRelation)
                         {
-                            //tx.Put(dbRelations, BitConverter.GetBytes(idRelation), Array.Empty<byte>()).ThrowOnError();
                             changesetRelations[idRelation] = null;
                         }
                         break;
@@ -121,9 +55,7 @@ namespace OsmNightWatch
             }
         }
 
-        MemoryStream ms = new MemoryStream();
-
-        private void Put(LightningTransaction tx, LightningDatabase db, OsmGeo element)
+        private void Put(OsmGeo element)
         {
             switch (element.Type)
             {
@@ -137,10 +69,6 @@ namespace OsmNightWatch
                     changesetRelations[(long)element.Id!] = (Relation)element;
                     break;
             }
-
-            //ms.Position = 0;
-            //BinarySerializer.Append(ms, element);
-            //tx.Put(db, BitConverter.GetBytes((long)element.Id!).AsSpan(), ms.ToArray().AsSpan(0, (int)ms.Position)).ThrowOnError();
         }
 
         public void BatchLoad(HashSet<long> nodeIds, HashSet<long> wayIds, HashSet<long> relationIds)

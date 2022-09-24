@@ -12,53 +12,58 @@ using System.Xml.Serialization;
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
 
-var resolution = ReplicationConfig.Daily;
-var path = @"C:\COSMOS\planet-220829.osm.pbf";
+var path = @"C:\COSMOS\planet-220919.osm.pbf";
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
 var analyzers = new IOsmAnalyzer[] { /*new AdminOpenPolygonAnalyzer(),*/new BrokenCoastlineAnalyzer() };
 var keyValueDatabase = new KeyValueDatabase(Path.GetFullPath("KeyValueData"));
 var dbWithChagnes = new OsmDatabaseWithReplicationData(pbfDb, keyValueDatabase);
-if (keyValueDatabase.GetSequenceNumber() is not long nextSequenceId)
-{
-    nextSequenceId = await Utils.GetSequenceNumberFromPbf(index, resolution);
-    Console.WriteLine($"Got {nextSequenceId} from PBF.");
-}
+var pbfTimestamp = Utils.GetLatestTimtestampFromPbf(index);
+Console.WriteLine($"PBF timestamp {pbfTimestamp}.");
+var enumerator = new CatchupReplicationDiffEnumerator(pbfTimestamp);
 while (true)
 {
-    var changeset = await DownloadDiff(resolution, nextSequenceId);
-    if (changeset is null)
+    var diff = await enumerator.MoveNext();
+    if (diff == false)
     {
+        Console.WriteLine($"Failed to iterate enumerator... Sleeping 1 minute.");
         await Task.Delay(TimeSpan.FromMinutes(1));
         continue;
     }
-    var replicationState = await resolution.GetReplicationState(nextSequenceId);
+    var replicationState = enumerator.State;
     if (replicationState is null)
+    {
+        Console.WriteLine($"Enumerator returned null state, sleeping 1 minute.");
+        await Task.Delay(TimeSpan.FromMinutes(1));
+        continue;
+    }
+    Console.WriteLine($"Downloading changeset '{replicationState.SequenceNumber}'.");
+    var changeset = await DownloadDiff(replicationState.Config, replicationState.SequenceNumber);
+    if (changeset is null)
     {
         throw new InvalidOperationException("How we got changeset but no replication state?");
     }
-    using var tx = keyValueDatabase.BeginTransaction();
-    Console.WriteLine($"Processing changeset '{nextSequenceId}' from '{replicationState.StartTimestamp}'.");
+    Console.WriteLine($"Processing changeset '{replicationState.Config.Url}' '{replicationState.SequenceNumber}' from '{replicationState.StartTimestamp}'.");
     var data = new IssuesData()
     {
         DateTime = replicationState.StartTimestamp,
         AllIssues = new List<IssueData>()
     };
-    dbWithChagnes.ApplyChangeset(changeset, tx);
-    foreach (var analyzer in analyzers)
+    dbWithChagnes.ApplyChangeset(changeset);
+    //Only do processing&uploading on changesets that are 5 minutes or newer
+    if (replicationState.EndTimestamp.AddMinutes(5) > DateTime.UtcNow)
     {
-        Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}.");
-        var relevatThings = dbWithChagnes.Filter(analyzer.FilterSettings).ToArray();
-        Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevatThings.Length}.");
-        var issues = analyzer.Initialize(relevatThings, dbWithChagnes, dbWithChagnes).ToList();
-        Console.WriteLine($"{DateTime.Now} Found {issues.Count} issues.");
-        data.AllIssues.AddRange(issues);
+        foreach (var analyzer in analyzers)
+        {
+            Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}.");
+            var relevatThings = dbWithChagnes.Filter(analyzer.FilterSettings).ToArray();
+            Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevatThings.Length}.");
+            var issues = analyzer.Initialize(relevatThings, dbWithChagnes, dbWithChagnes).ToList();
+            Console.WriteLine($"{DateTime.Now} Found {issues.Count} issues.");
+            data.AllIssues.AddRange(issues);
+        }
+        await IssuesUploader.UploadAsync(data);
     }
-
-    nextSequenceId++;
-    keyValueDatabase.SetSequenceNumber(nextSequenceId, tx);
-    var code = tx.Commit();
-    await IssuesUploader.UploadAsync(data);
 }
 
 
