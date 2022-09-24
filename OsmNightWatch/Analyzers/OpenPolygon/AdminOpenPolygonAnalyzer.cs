@@ -20,22 +20,20 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
         {
             if (relation.Tags.TryGetValue("admin_level", out var lvl))
             {
-                if (double.Parse(lvl, CultureInfo.InvariantCulture) > 7)
+                if (double.Parse(lvl, CultureInfo.InvariantCulture) > 6)
                     return false;
             }
             else
             {
                 return false;
             }
-            var sw = Stopwatch.StartNew();
+            if (relation.Tags.TryGetValue("type", out var typeValue) && typeValue != "boundary")
+            {
+                return false;
+            }
             if (new RelationValidationTest().Visit(relation, newOsmSource))
             {
                 return true;
-            }
-            sw.Stop();
-            if (sw.ElapsedMilliseconds > 1000)
-            {
-                Console.WriteLine($"Relation {relation.Id} took {sw.ElapsedMilliseconds}ms");
             }
             return false;
         }
@@ -50,9 +48,7 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
 
         public IEnumerable<IssueData> Initialize(IEnumerable<OsmGeo> relevatThings, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource)
         {
-            Console.WriteLine("Starting batch load.");
             Utils.BatchLoad(relevatThings, (IOsmGeoBatchSource)newOsmSource, true, false);
-            Console.WriteLine("Finished batch load.");
 
             foreach (var relevatThing in relevatThings)
             {
