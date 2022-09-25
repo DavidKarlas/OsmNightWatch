@@ -12,7 +12,7 @@ using System.Xml.Serialization;
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
 
-var path = @"C:\COSMOS\planet-220919.osm.pbf";
+var path = @"D:\planet-220919.osm.pbf";
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
 var analyzers = new IOsmAnalyzer[] { new AdminOpenPolygonAnalyzer(), new BrokenCoastlineAnalyzer() };
@@ -78,7 +78,7 @@ async Task<OsmChange?> DownloadDiff(ReplicationConfig config, long sequenceNumbe
 {
     var replicationFilePath = ReplicationFilePath(sequenceNumber);
     var url = DiffUrl(config, replicationFilePath);
-    var cachePath = Path.Combine(@"C:\COSMOS", "ReplicationCache", config.IsDaily ? "daily" : config.IsHourly ? "hour" : "minute", replicationFilePath);
+    var cachePath = Path.Combine(@"D:\", "ReplicationCache", config.IsDaily ? "daily" : config.IsHourly ? "hour" : "minute", replicationFilePath);
     if (!File.Exists(cachePath))
     {
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath));
