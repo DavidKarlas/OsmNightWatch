@@ -73,6 +73,21 @@ namespace OsmNightWatch
 
         public void BatchLoad(HashSet<long> nodeIds, HashSet<long> wayIds, HashSet<long> relationIds)
         {
+            if (nodeIds != null)
+            {
+                nodeIds = new HashSet<long>(nodeIds);
+                nodeIds.ExceptWith(changesetNodes.Keys);
+            }
+            if (wayIds != null)
+            {
+                wayIds = new HashSet<long>(wayIds);
+                wayIds.ExceptWith(changesetWays.Keys);
+            }
+            if (relationIds != null)
+            {
+                relationIds = new HashSet<long>(relationIds);
+                relationIds.ExceptWith(changesetRelations.Keys);
+            }
             (baseSource as IOsmGeoBatchSource)?.BatchLoad(nodeIds, wayIds, relationIds);
         }
 

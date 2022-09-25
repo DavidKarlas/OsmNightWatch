@@ -19,23 +19,35 @@ internal class PbfDatabase : IOsmGeoFilterableSource
     {
         if (nodeIds != null)
         {
-            foreach (var node in NodesParser.LoadNodes(nodeIds, index))
+            nodeIds.ExceptWith(_nodes.Keys);
+            if (nodeIds.Count > 0)
             {
-                _nodes[node.Key] = node.Value;
+                foreach (var node in NodesParser.LoadNodes(nodeIds, index))
+                {
+                    _nodes[node.Key] = node.Value;
+                }
             }
         }
         if (wayIds != null)
         {
-            foreach (var way in WaysParser.LoadWays(wayIds, index))
+            wayIds.ExceptWith(_ways.Keys);
+            if (wayIds.Count > 0)
             {
-                _ways[way.Key] = way.Value;
+                foreach (var way in WaysParser.LoadWays(wayIds, index))
+                {
+                    _ways[way.Key] = way.Value;
+                }
             }
         }
         if (relationIds != null)
         {
-            foreach (var relation in RelationsParser.LoadRelations(relationIds, index))
+            relationIds.ExceptWith(_relations.Keys);
+            if (relationIds.Count > 0)
             {
-                _relations[relation.Key] = relation.Value;
+                foreach (var relation in RelationsParser.LoadRelations(relationIds, index))
+                {
+                    _relations[relation.Key] = relation.Value;
+                }
             }
         }
     }
