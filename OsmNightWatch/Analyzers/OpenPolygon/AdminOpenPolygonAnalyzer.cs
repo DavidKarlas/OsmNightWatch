@@ -20,7 +20,10 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
         {
             if (relation.Tags.TryGetValue("admin_level", out var lvl))
             {
-                if (double.Parse(lvl, CultureInfo.InvariantCulture) > 6)
+                //If failing to parse...
+                if (!double.TryParse(lvl, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
+                    return false;
+                if (parsed > 6)
                     return false;
             }
             else
