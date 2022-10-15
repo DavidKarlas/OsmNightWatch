@@ -34,18 +34,24 @@ namespace OsmNightWatch
                     case OsmGeoType.Node:
                         if (change.Id is long idNode)
                         {
+                            if (changesetNodes.TryGetValue(idNode, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
+                                continue;
                             changesetNodes[idNode] = null;
                         }
                         break;
                     case OsmGeoType.Way:
                         if (change.Id is long idWay)
                         {
+                            if (changesetWays.TryGetValue(idWay, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
+                                continue;
                             changesetWays[idWay] = null;
                         }
                         break;
                     case OsmGeoType.Relation:
                         if (change.Id is long idRelation)
                         {
+                            if (changesetRelations.TryGetValue(idRelation, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
+                                continue;
                             changesetRelations[idRelation] = null;
                         }
                         break;
