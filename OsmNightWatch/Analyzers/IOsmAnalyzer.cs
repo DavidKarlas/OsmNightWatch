@@ -11,8 +11,6 @@ namespace OsmNightWatch.Analyzers
 
         FilterSettings FilterSettings { get; }
 
-        IEnumerable<IssueData> AnalyzeChanges(OsmChange changeset, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource);
-
-        IEnumerable<IssueData> Initialize(IEnumerable<OsmGeo> relevatThings, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource);
+        IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevatThings, IOsmGeoBatchSource newOsmSource);
     }
 }

@@ -22,15 +22,24 @@ Console.WriteLine($"PBF timestamp {pbfTimestamp}.");
 IReplicationDiffEnumerator enumerator = new CatchupReplicationDiffEnumerator(pbfTimestamp);
 while (true)
 {
-    if (await enumerator.MoveNext() == false)
+retryEnumerator:
+    try
     {
-        Console.WriteLine($"Failed to iterate enumerator... Sleeping 1 minute.");
-        await Task.Delay(TimeSpan.FromMinutes(1));
-        if (enumerator.State.Config.Period == ReplicationConfig.Minutely.Period && enumerator is CatchupReplicationDiffEnumerator)
+        if (await enumerator.MoveNext() == false)
         {
-            enumerator = await ReplicationConfig.Minutely.GetDiffEnumerator(enumerator.State.SequenceNumber);
+            Console.WriteLine($"Failed to iterate enumerator... Sleeping 1 minute.");
+            await Task.Delay(TimeSpan.FromMinutes(1));
+            if (enumerator.State.Config.Period == ReplicationConfig.Minutely.Period && enumerator is CatchupReplicationDiffEnumerator)
+            {
+                enumerator = await ReplicationConfig.Minutely.GetDiffEnumerator(enumerator.State.SequenceNumber);
+            }
+            continue;
         }
-        continue;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine(ex);
+        goto retryEnumerator;
     }
     var replicationState = enumerator.State;
     if (replicationState is null)
@@ -39,32 +48,51 @@ while (true)
         await Task.Delay(TimeSpan.FromMinutes(1));
         continue;
     }
-    Console.WriteLine($"Downloading changeset '{replicationState.SequenceNumber}'.");
-    var changeset = await DownloadDiff(replicationState.Config, replicationState.SequenceNumber);
-    if (changeset is null)
+retryProcessing:
+    try
     {
-        throw new InvalidOperationException("How we got changeset but no replication state?");
-    }
-    Console.WriteLine($"Processing changeset '{replicationState.Config.Url}' '{replicationState.SequenceNumber}' from '{replicationState.StartTimestamp}'.");
-    var data = new IssuesData()
-    {
-        DateTime = replicationState.StartTimestamp,
-        AllIssues = new List<IssueData>()
-    };
-    dbWithChagnes.ApplyChangeset(changeset);
-    //Only do processing&uploading on changesets that are 5 minutes or newer
-    if (replicationState.EndTimestamp.AddMinutes(5) > DateTime.UtcNow)
-    {
-        foreach (var analyzer in analyzers)
+        Console.WriteLine($"Downloading changeset '{replicationState.SequenceNumber}'.");
+        var changeset = await DownloadDiff(replicationState.Config, replicationState.SequenceNumber);
+        if (changeset is null)
         {
-            Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}.");
-            var relevatThings = dbWithChagnes.Filter(analyzer.FilterSettings).ToArray();
-            Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevatThings.Length}.");
-            var issues = analyzer.Initialize(relevatThings, dbWithChagnes, dbWithChagnes).ToList();
-            Console.WriteLine($"{DateTime.Now} Found {issues.Count} issues.");
-            data.AllIssues.AddRange(issues);
+            throw new InvalidOperationException("How we got changeset but no replication state?");
         }
-        await IssuesUploader.UploadAsync(data);
+        Console.WriteLine($"Processing changeset '{replicationState.Config.Url}' '{replicationState.SequenceNumber}' from '{replicationState.StartTimestamp}'.");
+        var data = new IssuesData()
+        {
+            DateTime = replicationState.StartTimestamp,
+            AllIssues = new List<IssueData>()
+        };
+        dbWithChagnes.ApplyChangeset(changeset);
+        //Only do processing&uploading on changesets that are 5 minutes or newer
+        if (replicationState.EndTimestamp.AddMinutes(5) > DateTime.UtcNow)
+        {
+            foreach (var analyzer in analyzers)
+            {
+                Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}.");
+                var relevatThings = dbWithChagnes.Filter(analyzer.FilterSettings).ToArray();
+                Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevatThings.Length}.");
+                var issues = analyzer.GetIssues(relevatThings, dbWithChagnes).ToList();
+                Console.WriteLine($"{DateTime.Now} Found {issues.Count} issues.");
+                data.AllIssues.AddRange(issues);
+            }
+        retryUpload:
+            try
+            {
+                await IssuesUploader.UploadAsync(data);
+            }
+            catch (Exception ex)
+            {
+                Thread.Sleep(5000);
+                Console.WriteLine(ex);
+                goto retryUpload;
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine(ex);
+        goto retryProcessing;
     }
 }
 

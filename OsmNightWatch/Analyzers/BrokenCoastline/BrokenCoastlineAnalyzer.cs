@@ -31,41 +31,11 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             }
         };
 
-        public IEnumerable<IssueData> Initialize(IEnumerable<OsmGeo> relevantThings, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource)
+        public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource)
         {
+            //Uncomment line below when we decide we need Nodes information...
+            //Utils.BatchLoad(relevantThings, newOsmSource, true, true);
             var (issuesNodes, issuesWays) = new CoastlineValidationTest().Visit(relevantThings, newOsmSource);
-            if (issuesWays.Count > 0)
-            {
-                foreach (var (way, detailsNum) in issuesWays)
-                {
-                    yield return new IssueData()
-                    {
-                        IssueType = AnalyzerName,
-                        OsmType = "way",
-                        OsmId = way.Id!.Value,
-                        Details = IssueDetails[detailsNum]
-                    };
-                }
-            }
-
-            if (issuesNodes.Count > 0)
-            {
-                foreach (var (nodeId, detailsNum) in issuesNodes)
-                {
-                    yield return new IssueData()
-                    {
-                        IssueType = AnalyzerName,
-                        OsmType = "node",
-                        OsmId = nodeId,
-                        Details = IssueDetails[detailsNum]
-                    };
-                }
-            }
-        }
-
-        public IEnumerable<IssueData> AnalyzeChanges(OsmChange changeset, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource)
-        {
-            var (issuesNodes, issuesWays) = new CoastlineValidationTest().Visit(changeset.Delete.Concat(changeset.Create).Concat(changeset.Modify).OfType<Way>(), newOsmSource);
             if (issuesWays.Count > 0)
             {
                 foreach (var (way, detailsNum) in issuesWays)

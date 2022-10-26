@@ -16,7 +16,7 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
     {
         public string AnalyzerName => "OpenAdminPolygon";
 
-        private bool AnalyzeRelation(Relation relation, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource)
+        private bool AnalyzeRelation(Relation relation, IOsmGeoSource osmSource)
         {
             if (relation.Tags.TryGetValue("admin_level", out var lvl))
             {
@@ -34,7 +34,7 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
             {
                 return false;
             }
-            if (new RelationValidationTest().Visit(relation, newOsmSource))
+            if (new RelationValidationTest().Visit(relation, osmSource))
             {
                 return true;
             }
@@ -49,15 +49,15 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
             }
         };
 
-        public IEnumerable<IssueData> Initialize(IEnumerable<OsmGeo> relevatThings, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource)
+        public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevatThings, IOsmGeoBatchSource osmSource)
         {
-            Utils.BatchLoad(relevatThings, (IOsmGeoBatchSource)newOsmSource, true, false);
+            Utils.BatchLoad(relevatThings, osmSource, true, false);
 
             foreach (var relevatThing in relevatThings)
             {
                 if (relevatThing is Relation relation)
                 {
-                    if (AnalyzeRelation(relation, oldOsmSource, newOsmSource))
+                    if (AnalyzeRelation(relation, osmSource))
                         yield return new IssueData()
                         {
                             IssueType = AnalyzerName,
@@ -65,20 +65,6 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
                             OsmId = relation.Id!.Value
                         };
                 }
-            }
-        }
-
-        public IEnumerable<IssueData> AnalyzeChanges(OsmChange changeset, IOsmGeoSource oldOsmSource, IOsmGeoSource newOsmSource)
-        {
-            foreach (var relation in changeset.Delete.Concat(changeset.Create).Concat(changeset.Modify).OfType<Relation>())
-            {
-                if (AnalyzeRelation(relation, oldOsmSource, newOsmSource))
-                    yield return new IssueData()
-                    {
-                        IssueType = AnalyzerName,
-                        OsmType = "relation",
-                        OsmId = relation.Id!.Value
-                    };
             }
         }
     }
