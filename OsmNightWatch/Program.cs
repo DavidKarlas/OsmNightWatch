@@ -20,6 +20,7 @@ var dbWithChagnes = new OsmDatabaseWithReplicationData(pbfDb);
 var pbfTimestamp = Utils.GetLatestTimtestampFromPbf(index);
 Console.WriteLine($"PBF timestamp {pbfTimestamp}.");
 IReplicationDiffEnumerator enumerator = new CatchupReplicationDiffEnumerator(pbfTimestamp);
+IssuesData oldIssuesData = null;
 while (true)
 {
 retryEnumerator:
@@ -58,15 +59,17 @@ retryProcessing:
             throw new InvalidOperationException("How we got changeset but no replication state?");
         }
         Console.WriteLine($"Processing changeset '{replicationState.Config.Url}' '{replicationState.SequenceNumber}' from '{replicationState.StartTimestamp}'.");
-        var data = new IssuesData()
-        {
-            DateTime = replicationState.StartTimestamp,
-            AllIssues = new List<IssueData>()
-        };
+
         dbWithChagnes.ApplyChangeset(changeset);
-        //Only do processing&uploading on changesets that are 5 minutes or newer
-        if (replicationState.EndTimestamp.AddMinutes(5) > DateTime.UtcNow)
+
+        // Only do processing old changesets newer than 8 days
+        // this allows for FirstTimeSeen to be set for past 8 days...
+        if (replicationState.EndTimestamp.AddDays(8) > DateTime.UtcNow)
         {
+            var newIssuesData = new IssuesData()
+            {
+                DateTime = replicationState.StartTimestamp
+            };
             foreach (var analyzer in analyzers)
             {
                 Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}.");
@@ -74,18 +77,26 @@ retryProcessing:
                 Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevatThings.Length}.");
                 var issues = analyzer.GetIssues(relevatThings, dbWithChagnes).ToList();
                 Console.WriteLine($"{DateTime.Now} Found {issues.Count} issues.");
-                data.AllIssues.AddRange(issues);
+                newIssuesData.AllIssues.AddRange(issues);
             }
+
+            newIssuesData.AddTimestamps(oldIssuesData);
+            oldIssuesData = newIssuesData;
+
         retryUpload:
-            try
+            //Only do uploading on changesets that are 5 minutes or newer
+            if (replicationState.EndTimestamp.AddMinutes(5) > DateTime.UtcNow)
             {
-                await IssuesUploader.UploadAsync(data);
-            }
-            catch (Exception ex)
-            {
-                Thread.Sleep(5000);
-                Console.WriteLine(ex);
-                goto retryUpload;
+                try
+                {
+                    await IssuesUploader.UploadAsync(newIssuesData);
+                }
+                catch (Exception ex)
+                {
+                    Thread.Sleep(5000);
+                    Console.WriteLine(ex);
+                    goto retryUpload;
+                }
             }
         }
     }
