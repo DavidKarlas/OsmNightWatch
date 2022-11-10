@@ -4,7 +4,7 @@
     {
         public DateTime DateTime { get; set; }
 
-        public List<IssueData> AllIssues { get; } = new();
+        public List<IssueData> AllIssues { get; init; } = new List<IssueData>();
 
         public void AddTimestamps(IssuesData? oldIssuesData)
         {
@@ -41,15 +41,15 @@
 
         public string Details { get; set; }
 
-        public DateTime FirstTimeSeen { get; set; }
+        public DateTime? FirstTimeSeen { get; set; }
 
         public override int GetHashCode()
         {
             return HashCode.Combine(
-                IssueType.GetHashCode(),
-                OsmType.GetHashCode(),
+                IssueType?.GetHashCode(),
+                OsmType?.GetHashCode(),
                 OsmId.GetHashCode(),
-                Details.GetHashCode());
+                Details?.GetHashCode());
         }
 
         public override bool Equals(object? obj)
