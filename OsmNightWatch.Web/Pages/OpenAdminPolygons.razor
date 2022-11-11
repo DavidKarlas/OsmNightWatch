@@ -6,10 +6,6 @@
 @using OsmNightWatch.Lib
 @inject IssuesDataService IssuesDataService
 
-<h1>Open Admin Polygons</h1>
-
-<p>Here is a list of all open admin polygons.</p>
-
 @if (issuesData == null)
 {
     <p><em>Loading...</em></p>
@@ -19,23 +15,27 @@ else
     <table class="table">
         <thead>
             <tr>
-                <th>Issue type</th>
-                <th>OSM Type</th>
-                <th>OSM Id</th>
-                <th>OSM URL</th>
-                <th>Additional Details</th>
+                <th>Grouped by day</th>
+                <th>OSM link</th>
+                <th>First time seen</th>
             </tr>
         </thead>
         <tbody>
-            @foreach (var issue in issuesData.AllIssues.Where(issue => issue.IssueType == "OpenAdminPolygon"))
+            @foreach (var issuesByDay in issuesData.AllIssues.Where(issue => issue.IssueType == "OpenAdminPolygon").GroupBy(i => i.FirstTimeSeen.Value.Date).OrderByDescending(ig => ig.Key))
             {
                 <tr>
-                    <td>@issue.IssueType</td>
-                    <td>@issue.OsmType</td>
-                    <td>@issue.OsmId</td>
-                    <td><a href="https://www.openstreetmap.org/@issue.OsmType/@issue.OsmId" target="_blank">link</a></td>
-                    <td>@issue.Details</td>
+                    <td>@issuesByDay.Key.ToString("yyyy-MM-dd  -  dddd")</td>
+                    <td></td>
+                    <td></td>
                 </tr>
+                foreach (var issue in issuesByDay.OrderByDescending(i => i.FirstTimeSeen).ThenBy(i => i.OsmType).ThenBy(i => i.OsmId))
+                {
+                    <tr>
+                        <td></td>
+                        <td><a href="https://www.openstreetmap.org/@issue.OsmType/@issue.OsmId" target="_blank">@issue.OsmType @issue.OsmId</a></td>
+                        <th>@issue.FirstTimeSeen!.Value.ToString("yyyy-MM-dd hh:mm:ss")</th>
+                    </tr>
+                }
             }
         </tbody>
     </table>
@@ -46,6 +46,6 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        issuesData = await IssuesDataService.GetIssuesDataAsync(DateTime.Now);
+        issuesData = await IssuesDataService.GetIssuesDataAsync();
     }
 }

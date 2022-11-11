@@ -46,6 +46,6 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        issuesData = await IssuesDataService.GetIssuesDataAsync(DateTime.Now);
+        issuesData = await IssuesDataService.GetIssuesDataAsync();
     }
 }

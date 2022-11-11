@@ -1,4 +1,7 @@
-﻿@inherits LayoutComponentBase
+﻿@using OsmNightWatch.Lib;
+@using OsmNightWatch.Web.Data;
+@inherits LayoutComponentBase
+@inject IssuesDataService IssuesDataService
 
 <PageTitle>OsmNightWatch.Web</PageTitle>
 
@@ -9,7 +12,23 @@
 
     <main>
         <div class="top-row px-4">
-            <a href="https://docs.microsoft.com/aspnet/" target="_blank">About</a>
+            <div class="col-sm-12">
+                @if (issuesData == null)
+                {
+                    <span class="pull-left">Loading...</span>
+                }
+                else
+                {
+                    @if (@issuesData.DateTime.AddMinutes(10) < DateTime.UtcNow)
+                    {
+                        <div class=".col-md-3 .offset-md-3 alert alert-danger">Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd hh:mm:ss")</div>
+                    }
+                    else
+                    {
+                        <div class=".col-md-3 .offset-md-3">Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd hh:mm:ss")</div>
+                    }
+                }
+            </div>
         </div>
 
         <article class="content px-4">
@@ -17,3 +36,11 @@
         </article>
     </main>
 </div>
+@code {
+    private IssuesData? issuesData;
+
+    protected override async Task OnInitializedAsync()
+    {
+        issuesData = await IssuesDataService.GetIssuesDataAsync();
+    }
+}
