@@ -21,11 +21,11 @@
                 {
                     @if (@issuesData.DateTime.AddMinutes(10) < DateTime.UtcNow)
                     {
-                        <div class=".col-md-3 .offset-md-3 alert alert-danger">Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd hh:mm:ss")</div>
+                        <div class=".col-md-3 .offset-md-3 alert alert-danger">Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</div>
                     }
                     else
                     {
-                        <div class=".col-md-3 .offset-md-3">Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd hh:mm:ss")</div>
+                        <div class=".col-md-3 .offset-md-3">Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</div>
                     }
                 }
             </div>
