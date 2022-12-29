@@ -67,14 +67,15 @@ retryProcessing:
         {
             var newIssuesData = new IssuesData()
             {
-                DateTime = replicationState.StartTimestamp
+                DateTime = replicationState.StartTimestamp,
+                MinutelySequenceNumber = (int)replicationState.SequenceNumber
             };
             foreach (var analyzer in analyzers)
             {
                 Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}.");
-                var relevatThings = dbWithChagnes.Filter(analyzer.FilterSettings).ToArray();
-                Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevatThings.Length}.");
-                var issues = analyzer.GetIssues(relevatThings, dbWithChagnes).ToList();
+                var relevantThings = dbWithChagnes.Filter(analyzer.FilterSettings).ToArray();
+                Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevantThings.Length}.");
+                var issues = analyzer.GetIssues(relevantThings, dbWithChagnes).ToList();
                 Console.WriteLine($"{DateTime.Now} Found {issues.Count} issues.");
                 newIssuesData.AllIssues.AddRange(issues);
             }

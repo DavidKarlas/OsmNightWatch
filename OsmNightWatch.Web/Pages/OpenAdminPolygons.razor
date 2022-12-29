@@ -1,4 +1,4 @@
-﻿@page "/OpenAdminPolygons"
+﻿@page "/OpenAdminPolygons/{AdminLevel:int?}"
 
 <PageTitle>Open Admin Polygons</PageTitle>
 
@@ -21,7 +21,7 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (var issuesByDay in issuesData.AllIssues.Where(issue => issue.IssueType == "OpenAdminPolygon").GroupBy(i => i.FirstTimeSeen.Value.Date).OrderByDescending(ig => ig.Key))
+            @foreach (var issuesByDay in issuesData.AllIssues.Where(issue => issue.IssueType == "OpenAdminPolygon" + AdminLevel).GroupBy(i => i.FirstTimeSeen.Value.Date).OrderByDescending(ig => ig.Key))
             {
                 <tr>
                     <td>@issuesByDay.Key.ToString("yyyy-MM-dd  -  dddd")</td>
@@ -32,7 +32,7 @@ else
                 {
                     <tr>
                         <td></td>
-                        <td><a href="https://www.openstreetmap.org/@issue.OsmType/@issue.OsmId" target="_blank">@issue.OsmType.ToUpper()[0] @issue.OsmId</a></td>
+                        <td><a href="https://www.openstreetmap.org/@issue.OsmType/@issue.OsmId" target="_blank">@issue.OsmType.ToUpper()[0]@issue.OsmId</a></td>
                         <th>@issue.FirstTimeSeen!.Value.ToString("yyyy-MM-dd HH:mm:ss")</th>
                     </tr>
                 }
@@ -42,6 +42,9 @@ else
 }
 
 @code {
+    [Parameter]
+    public int? AdminLevel { get; set; }
+
     private IssuesData? issuesData;
 
     protected override async Task OnInitializedAsync()

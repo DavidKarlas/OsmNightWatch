@@ -16,29 +16,36 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
     {
         public string AnalyzerName => "OpenAdminPolygon";
 
-        private bool AnalyzeRelation(Relation relation, IOsmGeoSource osmSource)
+        private bool? IsRelationValid(Relation relation, IOsmGeoSource osmSource, out bool fineWhenIgnoringOuter, out int adminLevel)
         {
+            fineWhenIgnoringOuter = false;
+            adminLevel = -1;
+            if (relation.Tags.TryGetValue("type", out var typeValue) && typeValue != "boundary")
+            {
+                return null;
+            }
             if (relation.Tags.TryGetValue("admin_level", out var lvl))
             {
                 //If failing to parse...
                 if (!double.TryParse(lvl, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
-                    return false;
-                if (parsed > 7)
-                    return false;
+                    return null;
+                if (parsed > 8)
+                    return null;
+                adminLevel = (int)parsed;
             }
             else
             {
+                return null;
+            }
+            if (IsValid(relation, osmSource, false))
+            {
+                if (IsValid(relation, osmSource, true))
+                {
+                    fineWhenIgnoringOuter = true;
+                }
                 return false;
             }
-            if (relation.Tags.TryGetValue("type", out var typeValue) && typeValue != "boundary")
-            {
-                return false;
-            }
-            if (new RelationValidationTest().Visit(relation, osmSource))
-            {
-                return true;
-            }
-            return false;
+            return true;
         }
 
         public FilterSettings FilterSettings { get; } = new FilterSettings()
@@ -49,23 +56,57 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
             }
         };
 
-        public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevatThings, IOsmGeoBatchSource osmSource)
+        public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource osmSource)
         {
-            Utils.BatchLoad(relevatThings, osmSource, true, false);
+            Utils.BatchLoad(relevantThings, osmSource, true, false);
 
-            foreach (var relevatThing in relevatThings)
+            foreach (var relevantThing in relevantThings)
             {
-                if (relevatThing is Relation relation)
+                if (relevantThing is Relation relation)
                 {
-                    if (AnalyzeRelation(relation, osmSource))
-                        yield return new IssueData()
-                        {
-                            IssueType = AnalyzerName,
-                            OsmType = "relation",
-                            OsmId = relation.Id!.Value
-                        };
+                    if (IsRelationValid(relation, osmSource, out var fineWhenIgnoringMemberType, out var adminLevel) ?? true)
+                        continue;
+                    var issueType = AnalyzerName;
+                    if (adminLevel > 6)
+                    {
+                        issueType += adminLevel;
+                    }
+                    yield return new IssueData()
+                    {
+                        IssueType = issueType,
+                        OsmType = "R",
+                        OsmId = relation.Id!.Value,
+                        Details = fineWhenIgnoringMemberType ? "Member missing 'inner' or 'outer' member role." : "Disconnected relation."
+                    };
                 }
             }
+        }
+
+        public bool IsValid(Relation r, IOsmGeoSource db, bool ignoreMemberRole)
+        {
+            var hashSet = new HashSet<long>();
+
+            foreach (var way in r.Members.Where(m => m.Type == OsmGeoType.Way && (ignoreMemberRole ? true : (m.Role == "inner" || m.Role == "outer"))).Select(m => db.GetWay(m.Id)))
+            {
+                var nodes = way.Nodes;
+                long first = nodes[0];
+                long last = nodes[nodes.Length - 1];
+
+                if (!hashSet.Remove(first))
+                {
+                    hashSet.Add(first);
+                }
+                if (!hashSet.Remove(last))
+                {
+                    hashSet.Add(last);
+                }
+            }
+
+            if (hashSet.Count > 0)
+            {
+                return false;
+            }
+            return true;
         }
     }
 }

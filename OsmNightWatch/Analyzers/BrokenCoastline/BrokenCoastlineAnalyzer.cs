@@ -1,14 +1,5 @@
 ﻿using OsmNightWatch.Lib;
 using OsmSharp;
-using OsmSharp.Changesets;
-using OsmSharp.Db;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Globalization;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace OsmNightWatch.Analyzers.BrokenCoastline
 {
@@ -43,7 +34,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                     yield return new IssueData()
                     {
                         IssueType = AnalyzerName,
-                        OsmType = "way",
+                        OsmType = "W",
                         OsmId = way.Id!.Value,
                         Details = IssueDetails[detailsNum]
                     };
@@ -57,7 +48,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                     yield return new IssueData()
                     {
                         IssueType = AnalyzerName,
-                        OsmType = "node",
+                        OsmType = "N",
                         OsmId = nodeId,
                         Details = IssueDetails[detailsNum]
                     };

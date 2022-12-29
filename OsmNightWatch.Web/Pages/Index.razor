@@ -25,11 +25,11 @@ else
             </tr>
         </thead>
         <tbody>
-            @foreach (var issueType in allIssueTypes)
+            @foreach (var issueType in Helper.IssueTypes)
             {
-                numberOfIssues = @issuesData.AllIssues?.Where(issue => issue.IssueType == issueType).Count();
+                numberOfIssues = @issuesData.AllIssues?.Where(issue => issue.IssueType == issueType.issueType).Count();
                 <tr style="color:@TextColor(@numberOfIssues.GetValueOrDefault());">
-                    <td style="cursor:pointer" @onclick="() => Navigate(issueType)">@issueType</td>
+                    <td style="cursor:pointer" @onclick="() => NavigationManager.NavigateTo(issueType.pageUrl)">@issueType.title</td>
                     <td>@numberOfIssues</td>
                 </tr>
             }
@@ -40,11 +40,6 @@ else
 @code {
     private IssuesData? issuesData;
     private int? numberOfIssues;
-    private List<string> allIssueTypes = new() { "OpenAdminPolygon", "BrokenCoastLine" };
-    private Dictionary<string, string> pagesDict = new() {
-        {"OpenAdminPolygon", "OpenAdminPolygons" },
-        {"BrokenCoastLine", "BrokenWaterCoastlines" }
-    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -61,6 +56,4 @@ else
                 return "red";
         }
     }
-
-    private void Navigate(string issueType) => NavigationManager.NavigateTo("/" + pagesDict[issueType]);
 }

@@ -3,6 +3,7 @@
     public class IssuesData
     {
         public DateTime DateTime { get; set; }
+        public int MinutelySequenceNumber { get; set; }
 
         public List<IssueData> AllIssues { get; init; } = new List<IssueData>();
 
@@ -16,10 +17,10 @@
                 }
                 return;
             }
-            var hashset = new HashSet<IssueData>(oldIssuesData.AllIssues);
+            var hashSet = new HashSet<IssueData>(oldIssuesData.AllIssues);
             foreach (var issue in AllIssues)
             {
-                if (hashset.TryGetValue(issue, out var oldIssue))
+                if (hashSet.TryGetValue(issue, out var oldIssue))
                 {
                     issue.FirstTimeSeen = oldIssue.FirstTimeSeen;
                 }
