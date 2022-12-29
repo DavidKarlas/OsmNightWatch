@@ -39,13 +39,13 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
             }
             if (IsValid(relation, osmSource, false))
             {
-                if (IsValid(relation, osmSource, true))
-                {
-                    fineWhenIgnoringOuter = true;
-                }
-                return false;
+                return true;
             }
-            return true;
+            if (IsValid(relation, osmSource, true))
+            {
+                fineWhenIgnoringOuter = true;
+            }
+            return false;
         }
 
         public FilterSettings FilterSettings { get; } = new FilterSettings()
