@@ -1,4 +1,5 @@
 ﻿@page "/OpenAdminPolygons/{AdminLevel:int?}"
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Open Admin Polygons</PageTitle>
 
@@ -16,8 +17,9 @@ else
         <thead>
             <tr>
                 <th>Grouped by day</th>
-                <th>OSM link</th>
+                <th>Links</th>
                 <th>First time seen</th>
+                <th>More details</th>
             </tr>
         </thead>
         <tbody>
@@ -27,13 +29,19 @@ else
                     <td>@issuesByDay.Key.ToString("yyyy-MM-dd  -  dddd")</td>
                     <td></td>
                     <td></td>
+                    <td></td>
                 </tr>
                 foreach (var issue in issuesByDay.OrderByDescending(i => i.FirstTimeSeen).ThenBy(i => i.OsmType).ThenBy(i => i.OsmId))
                 {
                     <tr>
                         <td></td>
-                        <td><a href="https://www.openstreetmap.org/@issue.OsmType/@issue.OsmId" target="_blank">@issue.OsmType.ToUpper()[0]@issue.OsmId</a></td>
-                        <th>@issue.FirstTimeSeen!.Value.ToString("yyyy-MM-dd HH:mm:ss")</th>
+                        <td>
+                            <a class="btn btn-success" href="https://www.openstreetmap.org/@Helper.ConvertToFullOsmType(issue.OsmType)/@issue.OsmId" target="_blank">OSM</a>
+                            <a class="btn btn-primary" href="http://ra.osmsurround.org/analyzeRelation?relationId=@issue.OsmId" target="_blank">RA</a>
+                            <a class="btn btn-warning" @onclick="(e)=>OpenJosm(issue.OsmId)">JOSM</a>
+                        </td>
+                        <td>@issue.FirstTimeSeen!.Value.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td>@issue.Details</td>
                     </tr>
                 }
             }
@@ -50,5 +58,10 @@ else
     protected override async Task OnInitializedAsync()
     {
         issuesData = await IssuesDataService.GetIssuesDataAsync();
+    }
+
+    public async Task OpenJosm(long osmId)
+    {
+        await JSRuntime.InvokeVoidAsync("CallJosm.Invoke", $"http://localhost:8111/load_object?new_layer=true&objects=r{osmId}&relation_members=true");
     }
 }
