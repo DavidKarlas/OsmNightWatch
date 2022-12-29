@@ -1,3 +1,3 @@
 # OsmNightWatch
 
-Source reposity for http://nightwatch.openstreetmap.si/.
+Source reposity for https://nightwatch.openstreetmap.si/.
