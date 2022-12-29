@@ -32,7 +32,7 @@ else
                 {
                     <tr>
                         <td></td>
-                        <td><a href="https://www.openstreetmap.org/@issue.OsmType/@issue.OsmId" target="_blank">@issue.OsmType @issue.OsmId</a></td>
+                        <td><a href="https://www.openstreetmap.org/@issue.OsmType/@issue.OsmId" target="_blank">@issue.OsmType.ToUpper()[0] @issue.OsmId</a></td>
                         <th>@issue.FirstTimeSeen!.Value.ToString("yyyy-MM-dd HH:mm:ss")</th>
                     </tr>
                 }
