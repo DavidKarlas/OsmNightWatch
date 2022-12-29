@@ -33,11 +33,11 @@ else
                 </tr>
                 foreach (var issue in issuesByDay.OrderByDescending(i => i.FirstTimeSeen).ThenBy(i => i.OsmType).ThenBy(i => i.OsmId))
                 {
-                    <tr>
+                    <tr style="@(lastClickedOsmId==issue.OsmId?"background-color: #e8f4f8;":"")">
                         <td></td>
                         <td>
-                            <a class="btn btn-success" href="https://www.openstreetmap.org/@Helper.ConvertToFullOsmType(issue.OsmType)/@issue.OsmId" target="_blank">OSM</a>
-                            <a class="btn btn-primary" href="http://ra.osmsurround.org/analyzeRelation?relationId=@issue.OsmId" target="_blank">RA</a>
+                            <a class="btn btn-success" @onclick="(e)=>HighligthMe(issue.OsmId)" href="https://www.openstreetmap.org/@Helper.ConvertToFullOsmType(issue.OsmType)/@issue.OsmId" target="_blank">OSM</a>
+                            <a class="btn btn-primary" @onclick="(e)=>HighligthMe(issue.OsmId)" href="http://ra.osmsurround.org/analyzeRelation?relationId=@issue.OsmId" target="_blank">RA</a>
                             <a class="btn btn-warning" @onclick="(e)=>OpenJosm(issue.OsmId)">JOSM</a>
                         </td>
                         <td>@issue.FirstTimeSeen!.Value.ToString("yyyy-MM-dd HH:mm:ss")</td>
@@ -53,6 +53,8 @@ else
     [Parameter]
     public int? AdminLevel { get; set; }
 
+    public long lastClickedOsmId = -1;
+
     private IssuesData? issuesData;
 
     protected override async Task OnInitializedAsync()
@@ -60,8 +62,15 @@ else
         issuesData = await IssuesDataService.GetIssuesDataAsync();
     }
 
+    public async Task HighligthMe(long osmId)
+    {
+        lastClickedOsmId = osmId;
+        this.StateHasChanged();
+    }
+
     public async Task OpenJosm(long osmId)
     {
         await JSRuntime.InvokeVoidAsync("CallJosm.Invoke", $"http://localhost:8111/load_object?new_layer=true&objects=r{osmId}&relation_members=true");
+        await HighligthMe(osmId);
     }
 }
