@@ -23,7 +23,10 @@
                 {
                     issue.FirstTimeSeen = oldIssue.FirstTimeSeen;
                 }
-                issue.FirstTimeSeen = DateTime;
+                else
+                {
+                    issue.FirstTimeSeen = DateTime;
+                }
             }
         }
     }
