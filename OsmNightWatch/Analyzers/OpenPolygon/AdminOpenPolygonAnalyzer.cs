@@ -23,7 +23,7 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
                 //If failing to parse...
                 if (!double.TryParse(lvl, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed))
                     return false;
-                if (parsed > 6)
+                if (parsed > 7)
                     return false;
             }
             else
