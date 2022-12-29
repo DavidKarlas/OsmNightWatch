@@ -19,4 +19,16 @@ internal class IssuesUploader
         BlobClient blobClient = containerClient.GetBlobClient(fileName);
         await blobClient.UploadAsync(memStream, overwrite: true);
     }
+
+    internal static async Task<IssuesData> DownloadAsync()
+    {
+        string blobStorageContainerName = "data";
+        string fileName = "issues.json";
+
+        BlobContainerClient containerClient = new(blobStorageConnectionString, blobStorageContainerName);
+        BlobClient blobClient = containerClient.GetBlobClient(fileName);
+        var response = await blobClient.DownloadContentAsync();
+
+        return JsonSerializer.Deserialize<IssuesData>(response.Value.Content.ToArray())!;
+    }
 }

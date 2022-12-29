@@ -20,7 +20,7 @@ var dbWithChagnes = new OsmDatabaseWithReplicationData(pbfDb);
 var pbfTimestamp = Utils.GetLatestTimtestampFromPbf(index);
 Console.WriteLine($"PBF timestamp {pbfTimestamp}.");
 IReplicationDiffEnumerator enumerator = new CatchupReplicationDiffEnumerator(pbfTimestamp);
-IssuesData oldIssuesData = null;
+IssuesData oldIssuesData = await IssuesUploader.DownloadAsync();
 while (true)
 {
 retryEnumerator:
@@ -62,9 +62,8 @@ retryProcessing:
 
         dbWithChagnes.ApplyChangeset(changeset);
 
-        // Only do processing old changesets newer than 8 days
-        // this allows for FirstTimeSeen to be set for past 8 days...
-        if (replicationState.EndTimestamp.AddDays(8) > DateTime.UtcNow)
+        // Only do processing old changesets newer than already processed data..
+        if (replicationState.StartTimestamp > oldIssuesData.DateTime)
         {
             var newIssuesData = new IssuesData()
             {
