@@ -16,10 +16,17 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
     {
         public string AnalyzerName => "OpenAdminPolygon";
 
-        private bool? IsRelationValid(Relation relation, IOsmGeoSource osmSource, out bool fineWhenIgnoringOuter, out int adminLevel)
+        private bool? IsRelationValid(Relation relation, IOsmGeoSource osmSource, out bool fineWhenIgnoringOuter, out int adminLevel, out string friendlyName)
         {
             fineWhenIgnoringOuter = false;
             adminLevel = -1;
+            if (!relation.Tags.TryGetValue("name:en", out friendlyName))
+            {
+                if (!relation.Tags.TryGetValue("name", out friendlyName))
+                {
+                    friendlyName = "";
+                }
+            }
             if (relation.Tags.TryGetValue("type", out var typeValue) && typeValue != "boundary")
             {
                 return null;
@@ -64,7 +71,7 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
             {
                 if (relevantThing is Relation relation)
                 {
-                    if (IsRelationValid(relation, osmSource, out var fineWhenIgnoringMemberType, out var adminLevel) ?? true)
+                    if (IsRelationValid(relation, osmSource, out var fineWhenIgnoringMemberType, out var adminLevel, out var friendlyName) ?? true)
                         continue;
                     var issueType = AnalyzerName;
                     if (adminLevel > 6)
@@ -75,6 +82,7 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
                     {
                         IssueType = issueType,
                         OsmType = "R",
+                        FriendlyName = friendlyName,
                         OsmId = relation.Id!.Value,
                         Details = fineWhenIgnoringMemberType ? "Member missing 'inner' or 'outer' member role." : "Disconnected relation."
                     };

@@ -34,6 +34,8 @@
 
     public class IssueData
     {
+        public string FriendlyName { get; set; }
+
         /// <summary>
         /// The issue type, e.g: OpenAdminPolygon, BrokenCoastLine...
         /// </summary>
