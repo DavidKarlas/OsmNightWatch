@@ -77,7 +77,7 @@ namespace OsmNightWatch
             }
         }
 
-        public void BatchLoad(HashSet<long> nodeIds, HashSet<long> wayIds, HashSet<long> relationIds)
+        public void BatchLoad(HashSet<long>? nodeIds, HashSet<long>? wayIds, HashSet<long>? relationIds)
         {
             if (nodeIds != null)
             {

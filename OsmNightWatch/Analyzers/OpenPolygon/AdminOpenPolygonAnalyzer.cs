@@ -27,10 +27,6 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
                     friendlyName = "";
                 }
             }
-            if (relation.Tags.TryGetValue("type", out var typeValue) && typeValue != "boundary")
-            {
-                return null;
-            }
             if (relation.Tags.TryGetValue("admin_level", out var lvl))
             {
                 //If failing to parse...
@@ -59,7 +55,11 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
         {
             Filters = new List<ElementFilter>()
             {
-                new ElementFilter(OsmGeoType.Relation, new[] { new TagFilter("boundary", "administrative") })
+                new ElementFilter(OsmGeoType.Relation, new[] {
+                    new TagFilter("boundary", "administrative"),
+                    new TagFilter("type", "boundary"),
+                    new TagFilter("admin_level", "2", "3","4","5","6", "7", "8")
+                })
             }
         };
 
@@ -90,7 +90,7 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
             }
         }
 
-        public bool IsValid(Relation r, IOsmGeoSource db, bool ignoreMemberRole)
+        public static bool IsValid(Relation r, IOsmGeoSource db, bool ignoreMemberRole)
         {
             var hashSet = new HashSet<long>();
 

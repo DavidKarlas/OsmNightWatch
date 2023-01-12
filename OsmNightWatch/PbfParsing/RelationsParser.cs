@@ -109,6 +109,13 @@ namespace OsmNightWatch.PbfParsing
                             stringIdFilters.Add(val2, hashset);
                     }
                 }
+
+                if (relationsToLoad == null && stringIdFilters.Count == 0)
+                {
+                    // So we are not filtering by relation id and this blob doesn't have any matching string to key filters
+                    // just stop here...
+                    return;
+                }
             }
 
             var tagKeys = new List<int>();
@@ -121,6 +128,7 @@ namespace OsmNightWatch.PbfParsing
             {
                 var primitivegroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedSpan).size;
                 var expectedLengthAtEndOfPrimitiveGroup = uncompressedSpan.Length - primitivegroupSize;
+            nextIteration:
                 while (uncompressedSpan.Length > expectedLengthAtEndOfPrimitiveGroup)
                 {
                     tagKeys.Clear();
@@ -138,15 +146,16 @@ namespace OsmNightWatch.PbfParsing
                     }
                     BinSerialize.EnsureProtoIndexAndType(ref uncompressedSpan, 1, 0);
                     var relationId = BinSerialize.ReadPackedLong(ref uncompressedSpan);
-                    bool accepted = false;
+                    bool doTagFiltering = true;
                     if (relationsToLoad != null)
                     {
                         if (relationsToLoad.Contains(relationId))
                         {
-                            accepted = true;
+                            doTagFiltering = false;
                         }
                         else
                         {
+                            // Skip to next relation
                             uncompressedSpan = uncompressedSpan.Slice(uncompressedSpan.Length - expectedLengthAtEndOfPrimitive);
                             continue;
                         }
@@ -164,48 +173,53 @@ namespace OsmNightWatch.PbfParsing
                                 {
                                     int currentTagKeyId = BinSerialize.ReadPackedInt(ref uncompressedSpan);
                                     tagKeys.Add(currentTagKeyId);
-                                    if (!accepted && stringIdFilters.TryGetValue(currentTagKeyId, out var hashset))
+                                    
+                                    if (!doTagFiltering)
+                                        continue;
+
+                                    if (stringIdFilters.TryGetValue(currentTagKeyId, out var hashset))
                                     {
-                                        if (hashset == null)
-                                        {
-                                            accepted = true;
-                                        }
-                                        else
-                                        {
-                                            expectedValues.Add(tagKeys.Count, hashset);
-                                        }
+                                        expectedValues.Add(tagKeys.Count, hashset);
                                     }
                                 }
-                                // accepted would be true if we had matching key without value filter
-                                // expectedValues would not be null if we had matching key, with value filters
-                                // if none of this is true, there is no chance to have a match...
-                                if (!accepted && expectedValues.Count == 0)
+                                if (doTagFiltering)
                                 {
-                                    // Skip to next relation
-                                    uncompressedSpan = uncompressedSpan.Slice(uncompressedSpan.Length - expectedLengthAtEndOfPrimitive);
-                                    continue;
+                                    if (expectedValues.Count != tagFilters.Utf8TagsFilter.Count)
+                                    {
+                                        // Skip to next relation
+                                        uncompressedSpan = uncompressedSpan.Slice(uncompressedSpan.Length - expectedLengthAtEndOfPrimitive);
+                                        goto nextIteration;
+                                    }
                                 }
                                 break;
                             case 3://Tag values
                                 var sizeOfValues = BinSerialize.ReadPackedUnsignedInteger(ref uncompressedSpan);
                                 var expectedLengthAtEndOfValues = uncompressedSpan.Length - sizeOfValues;
+                                int matchedValues = 0;
                                 while (uncompressedSpan.Length > expectedLengthAtEndOfValues)
                                 {
                                     int currentTagValueId = BinSerialize.ReadPackedInt(ref uncompressedSpan);
                                     tagValues.Add(currentTagValueId);
-                                    if (!accepted && expectedValues.TryGetValue(tagValues.Count, out var acceptableValues))
+                                    
+                                    if (!doTagFiltering)
+                                        continue;
+
+                                    if (expectedValues.TryGetValue(tagValues.Count, out var acceptableValues))
                                     {
-                                        if (acceptableValues.Contains(currentTagValueId))
+                                        if (acceptableValues.Count == 0 || acceptableValues.Contains(currentTagValueId))
                                         {
-                                            accepted = true;
+                                            matchedValues++;
                                         }
                                     }
                                 }
-                                if (!accepted)
+                                if (doTagFiltering)
                                 {
-                                    // Skip to next relation
-                                    uncompressedSpan = uncompressedSpan.Slice(uncompressedSpan.Length - expectedLengthAtEndOfPrimitive);
-                                    continue;
+                                    if (matchedValues != expectedValues.Count)
+                                    {
+                                        // Skip to next relation
+                                        uncompressedSpan = uncompressedSpan.Slice(uncompressedSpan.Length - expectedLengthAtEndOfPrimitive);
+                                        goto nextIteration;
+                                    }
                                 }
                                 break;
                             case 4://Info
@@ -244,25 +258,26 @@ namespace OsmNightWatch.PbfParsing
                                 throw new Exception();
                         }
                     }
-                    if (accepted)
+                    if(doTagFiltering && tagKeys.Count == 0)
                     {
-                        var members = new RelationMember[membersIds.Count];
-                        for (int i = 0; i < members.Length; i++)
-                        {
-                            members[i] = new RelationMember(membersIds[i], Encoding.UTF8.GetString(stringSpans[roles[i]].Span), memberTypes[i]);
-                        }
-                        var tags = new TagsCollection(tagKeys.Count);
-                        for (int i = 0; i < tagKeys.Count; i++)
-                        {
-                            tags.Add(new Tag(Encoding.UTF8.GetString(stringSpans[tagKeys[i]].Span), Encoding.UTF8.GetString(stringSpans[tagValues[i]].Span)));
-                        }
-                        relationsBag.Add(new Relation()
-                        {
-                            Id = (long)relationId,
-                            Members = members,
-                            Tags = tags
-                        });
+                        goto nextIteration;
                     }
+                    var members = new RelationMember[membersIds.Count];
+                    for (int i = 0; i < members.Length; i++)
+                    {
+                        members[i] = new RelationMember(membersIds[i], Encoding.UTF8.GetString(stringSpans[roles[i]].Span), memberTypes[i]);
+                    }
+                    var tags = new TagsCollection(tagKeys.Count);
+                    for (int i = 0; i < tagKeys.Count; i++)
+                    {
+                        tags.Add(new Tag(Encoding.UTF8.GetString(stringSpans[tagKeys[i]].Span), Encoding.UTF8.GetString(stringSpans[tagValues[i]].Span)));
+                    }
+                    relationsBag.Add(new Relation()
+                    {
+                        Id = (long)relationId,
+                        Members = members,
+                        Tags = tags
+                    });
                 }
             }
             ArrayPool<byte>.Shared.Return(uncompressbuffer);

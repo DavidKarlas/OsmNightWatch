@@ -15,8 +15,10 @@ namespace OsmNightWatch.PbfParsing
                 Utf8TagsFilter.Add(
                     (
                         Encoding.UTF8.GetBytes(filterGroup.Key),
-                        filterGroup.Where(g => !string.IsNullOrEmpty(g.ValueFilter))
-                            .Select(g => (Memory<byte>)Encoding.UTF8.GetBytes(g.ValueFilter)).ToList())
+                        filterGroup.Where(g => g.ValidValues.Count != 0)
+                        .SelectMany(g => g.ValidValues)
+                        .Select(val => (Memory<byte>)Encoding.UTF8.GetBytes(val))
+                        .ToList())
                     );
             }
             foreach (var filter in Utf8TagsFilter)

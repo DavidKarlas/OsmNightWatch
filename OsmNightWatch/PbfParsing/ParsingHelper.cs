@@ -32,11 +32,7 @@ namespace OsmNightWatch.PbfParsing
         {
             using var file = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             var tasks = new List<Task>();
-#if DEBUG
-            var slimSemaphore = new SemaphoreSlim(1);
-#else
             var slimSemaphore = new SemaphoreSlim(24);
-#endif
             foreach (var fileOffset in fileOffsets)
             {
                 file.Seek(fileOffset.FileOffset, SeekOrigin.Begin);

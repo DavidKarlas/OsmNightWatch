@@ -1,6 +1,7 @@
 ﻿using OsmNightWatch;
 using OsmNightWatch.PbfParsing;
 using OsmSharp;
+using OsmSharp.Streams;
 
 internal class PbfDatabase : IOsmGeoFilterableSource
 {
@@ -13,6 +14,42 @@ internal class PbfDatabase : IOsmGeoFilterableSource
     public PbfDatabase(PbfIndex index)
     {
         this.index = index;
+    }
+
+    public void DumpBatchedValuesToPbf(string path)
+    {
+        using var fs = new FileStream(path, FileMode.Create);
+        var pbfOut = new PBFOsmStreamTarget(fs);
+        pbfOut.Initialize();
+        foreach (var node in _nodes.Values.OrderBy(n => n.Id))
+        {
+            node.ChangeSetId = 1;
+            node.TimeStamp = default(DateTime);
+            node.UserId = 1;
+            node.Version = 1;
+            node.UserName = "d";
+            pbfOut.AddNode(node);
+        }
+        pbfOut.Flush();
+        foreach (var way in _ways.Values.OrderBy(w => w.Id))
+        {
+            way.ChangeSetId = 1;
+            way.TimeStamp = default(DateTime);
+            way.UserId = 1;
+            way.Version = 1;
+            pbfOut.AddWay(way);
+        }
+        pbfOut.Flush();
+        foreach (var relation in _relations.Values.OrderBy(r => r.Id))
+        {
+
+            relation.ChangeSetId = 1;
+            relation.TimeStamp = default(DateTime);
+            relation.UserId = 1;
+            relation.Version = 1;
+            pbfOut.AddRelation(relation);
+        }
+        pbfOut.Flush();
     }
 
     public void BatchLoad(HashSet<long>? nodeIds = null, HashSet<long>? wayIds = null, HashSet<long>? relationIds = null)
