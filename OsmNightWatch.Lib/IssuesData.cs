@@ -50,8 +50,8 @@ namespace OsmNightWatch.Lib
             }
             else
             {
-                LastKnownGoodDateTime = oldIssuesData?.DateTime ?? default;
-                LastKnownGoodMinutelySequenceNumber = oldIssuesData?.MinutelySequenceNumber ?? -1;
+                LastKnownGoodDateTime = oldIssuesData?.LastKnownGoodDateTime ?? default;
+                LastKnownGoodMinutelySequenceNumber = oldIssuesData?.LastKnownGoodMinutelySequenceNumber ?? -1;
             }
         }
     }
