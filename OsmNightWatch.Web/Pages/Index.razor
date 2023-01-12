@@ -28,7 +28,7 @@ else
             @foreach (var issueType in Helper.IssueTypes)
             {
                 numberOfIssues = @issuesData.AllIssues?.Where(issue => issue.IssueType == issueType.issueType).Count();
-                <tr style="color:@TextColor(@numberOfIssues.GetValueOrDefault());">
+                <tr style="color:@TextColor(@issueType, @numberOfIssues.GetValueOrDefault());">
                     <td style="cursor:pointer" @onclick="() => NavigationManager.NavigateTo(issueType.pageUrl)">@issueType.title</td>
                     <td>@numberOfIssues</td>
                 </tr>
@@ -46,14 +46,21 @@ else
         issuesData = await IssuesDataService.GetIssuesDataAsync();
     }
 
-    private string TextColor(int nunberOfIssues)
+    private string TextColor((string issueType, string title, string pageUrl) issueType, int nunberOfIssues)
     {
         switch (nunberOfIssues)
         {
             case 0:
                 return "green";
             default:
-                return "red";
+                if (IssuesData.LastKnownGoodIssueTypes.Contains(issueType.issueType))
+                {
+                    return "red";
+                }
+                else
+                {
+                    return "orange";
+                }
         }
     }
 }

@@ -58,16 +58,16 @@ retryProcessing:
         {
             throw new InvalidOperationException("How we got changeset but no replication state?");
         }
-        Console.WriteLine($"Processing changeset '{replicationState.Config.Url}' '{replicationState.SequenceNumber}' from '{replicationState.StartTimestamp}'.");
+        Console.WriteLine($"Processing changeset '{replicationState.Config.Url}' '{replicationState.SequenceNumber}' from '{replicationState.EndTimestamp}'.");
 
         dbWithChagnes.ApplyChangeset(changeset);
 
         // Only do processing old changesets newer than already processed data..
-        if (replicationState.StartTimestamp > oldIssuesData.DateTime)
+        if (replicationState.EndTimestamp > oldIssuesData.DateTime)
         {
             var newIssuesData = new IssuesData()
             {
-                DateTime = replicationState.StartTimestamp,
+                DateTime = replicationState.EndTimestamp,
                 MinutelySequenceNumber = (int)replicationState.SequenceNumber
             };
             foreach (var analyzer in analyzers)
@@ -80,7 +80,7 @@ retryProcessing:
                 newIssuesData.AllIssues.AddRange(issues);
             }
 
-            newIssuesData.AddTimestamps(oldIssuesData);
+            newIssuesData.SetTimestampsAndLastKnownGood(oldIssuesData);
             oldIssuesData = newIssuesData;
 
         retryUpload:

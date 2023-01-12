@@ -1,25 +1,39 @@
-﻿namespace OsmNightWatch.Lib
+﻿using System.Collections.Generic;
+
+namespace OsmNightWatch.Lib
 {
     public class IssuesData
     {
+        public static HashSet<string> LastKnownGoodIssueTypes { get; } = new HashSet<string>()
+        {
+            "OpenAdminPolygon",
+            //"OpenAdminPolygon7",
+            //"OpenAdminPolygon8",
+            //"OpenAdminPolygon9",
+            //"OpenAdminPolygon10",
+            "BrokenCoastLine"
+        };
+        
         public DateTime DateTime { get; set; }
         public int MinutelySequenceNumber { get; set; }
 
+        public DateTime LastKnownGoodDateTime { get; set; }
+        public int LastKnownGoodMinutelySequenceNumber { get; set; }
+
         public List<IssueData> AllIssues { get; init; } = new List<IssueData>();
 
-        public void AddTimestamps(IssuesData? oldIssuesData)
+        public void SetTimestampsAndLastKnownGood(IssuesData? oldIssuesData)
         {
-            if (oldIssuesData == null)
-            {
-                foreach (var issue in AllIssues)
-                {
-                    issue.FirstTimeSeen = DateTime;
-                }
-                return;
-            }
-            var hashSet = new HashSet<IssueData>(oldIssuesData.AllIssues);
+            var hashSet = oldIssuesData == null ? new HashSet<IssueData>() : new HashSet<IssueData>(oldIssuesData.AllIssues);
+            bool canBeLastKnownGood = true;
             foreach (var issue in AllIssues)
             {
+                // Check if issue is in last known good category...
+                if (LastKnownGoodIssueTypes.Contains(issue.IssueType))
+                {
+                    canBeLastKnownGood = false;
+                }
+                
                 if (hashSet.TryGetValue(issue, out var oldIssue))
                 {
                     issue.FirstTimeSeen = oldIssue.FirstTimeSeen;
@@ -28,6 +42,16 @@
                 {
                     issue.FirstTimeSeen = DateTime;
                 }
+            }
+            if (canBeLastKnownGood)
+            {
+                LastKnownGoodDateTime = DateTime;
+                LastKnownGoodMinutelySequenceNumber = MinutelySequenceNumber;
+            }
+            else
+            {
+                LastKnownGoodDateTime = oldIssuesData?.DateTime ?? default;
+                LastKnownGoodMinutelySequenceNumber = oldIssuesData?.MinutelySequenceNumber ?? -1;
             }
         }
     }
