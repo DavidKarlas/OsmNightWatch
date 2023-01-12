@@ -16,7 +16,7 @@ else
     <table class="table">
         <thead>
             <tr>
-                <th>Grouped by day</th>
+                <th>Day/Name of relation</th>
                 <th>Links</th>
                 <th>First time seen</th>
                 <th>More details</th>
@@ -26,7 +26,7 @@ else
             @foreach (var issuesByDay in issuesData.AllIssues.Where(issue => issue.IssueType == "OpenAdminPolygon" + AdminLevel).GroupBy(i => i.FirstTimeSeen.Value.Date).OrderByDescending(ig => ig.Key))
             {
                 <tr>
-                    <td>@issuesByDay.Key.ToString("yyyy-MM-dd  -  dddd")</td>
+                    <td><b>@issuesByDay.Key.ToString("yyyy-MM-dd  -  dddd")</b></td>
                     <td></td>
                     <td></td>
                     <td></td>
@@ -34,9 +34,8 @@ else
                 foreach (var issue in issuesByDay.OrderByDescending(i => i.FirstTimeSeen).ThenBy(i => i.OsmType).ThenBy(i => i.OsmId))
                 {
                     <tr style="@(lastClickedOsmId==issue.OsmId?"background-color: #e8f4f8;":"")">
-                        <td></td>
+                        <td><a @onclick="(e)=>HighligthMe(issue.OsmId)" href="https://www.openstreetmap.org/@Helper.ConvertToFullOsmType(issue.OsmType)/@issue.OsmId" target="_blank">@issue.OsmType.ToUpper()[0]@issue.OsmId - @issue.FriendlyName</a></td>
                         <td>
-                            <a class="btn btn-success" @onclick="(e)=>HighligthMe(issue.OsmId)" href="https://www.openstreetmap.org/@Helper.ConvertToFullOsmType(issue.OsmType)/@issue.OsmId" target="_blank">OSM</a>
                             <a class="btn btn-primary" @onclick="(e)=>HighligthMe(issue.OsmId)" href="http://ra.osmsurround.org/analyzeRelation?relationId=@issue.OsmId" target="_blank">RA</a>
                             <a class="btn btn-warning" @onclick="(e)=>OpenJosm(issue.OsmId)">JOSM</a>
                         </td>

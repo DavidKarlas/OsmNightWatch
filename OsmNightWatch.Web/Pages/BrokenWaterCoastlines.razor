@@ -21,20 +21,23 @@ else
             <tr>
                 <th>First time seen</th>
                 <th>OSM link</th>
+                <th>Additional details</th>
             </tr>
         </thead>
         <tbody>
-            @foreach (var issuesByDay in issuesData.AllIssues.Where(issue => issue.IssueType == "BrokenCoastLine").GroupBy(i => i.FirstTimeSeen.Value).OrderByDescending(ig => ig.Key))
+            @foreach (var issuesByDay in issuesData.AllIssues.Where(issue => issue.IssueType == "BrokenCoastLine").GroupBy(i => i.FirstTimeSeen.Value.Date).OrderByDescending(ig => ig.Key))
             {
                 <tr>
                     <td>@issuesByDay.Key.ToString("yyyy-MM-dd  -  dddd")</td>
+                    <td></td>
                     <td></td>
                 </tr>
                 foreach (var issue in issuesByDay.OrderByDescending(i => i.FirstTimeSeen).ThenBy(i => i.OsmType).ThenBy(i => i.OsmId))
                 {
                     <tr>
-                        <td></td>
+                        <td>@issue.FirstTimeSeen!.Value.ToString("yyyy-MM-dd HH:mm:ss")</td>
                         <td><a href="https://www.openstreetmap.org/@Helper.ConvertToFullOsmType(issue.OsmType)/@issue.OsmId" target="_blank">@issue.OsmType.ToUpper()[0]@issue.OsmId</a></td>
+                        <td>@issue.Details</td>
                     </tr>
                 }
             }
