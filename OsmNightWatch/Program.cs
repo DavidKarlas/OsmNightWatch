@@ -49,11 +49,12 @@ retryEnumerator:
         await Task.Delay(TimeSpan.FromMinutes(1));
         continue;
     }
+    bool retryingProcessing = false;
 retryProcessing:
     try
     {
         Console.WriteLine($"Downloading changeset '{replicationState.SequenceNumber}'.");
-        var changeset = await DownloadDiff(replicationState.Config, replicationState.SequenceNumber);
+        var changeset = await DownloadDiff(replicationState.Config, replicationState.SequenceNumber, retryingProcessing);
         if (changeset is null)
         {
             throw new InvalidOperationException("How we got changeset but no replication state?");
@@ -103,6 +104,7 @@ retryProcessing:
     catch (Exception ex)
     {
         Console.WriteLine(ex);
+        retryingProcessing = true;
         goto retryProcessing;
     }
 }
@@ -113,12 +115,12 @@ string DiffUrl(ReplicationConfig config, string filePath)
     return new Uri(new Uri(config.Url), filePath).ToString();
 }
 
-async Task<OsmChange?> DownloadDiff(ReplicationConfig config, long sequenceNumber)
+async Task<OsmChange?> DownloadDiff(ReplicationConfig config, long sequenceNumber, bool ignoreCache)
 {
     var replicationFilePath = ReplicationFilePath(sequenceNumber);
     var url = DiffUrl(config, replicationFilePath);
     var cachePath = Path.Combine(@"D:\", "ReplicationCache", config.IsDaily ? "daily" : config.IsHourly ? "hour" : "minute", replicationFilePath);
-    if (!File.Exists(cachePath))
+    if (ignoreCache || !File.Exists(cachePath))
     {
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath));
         using FileStream fsw = File.Create(cachePath);
