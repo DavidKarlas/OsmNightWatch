@@ -19,7 +19,7 @@ var analyzers = new IOsmAnalyzer[] {
     new OsmNightWatch.Analyzers.OpenPolygon.AdminOpenPolygonAnalyzer(),
     new OsmNightWatch.Analyzers.BrokenCoastline.BrokenCoastlineAnalyzer() };
 var dbWithChanges = new OsmDatabaseWithReplicationData(pbfDb);
-var pbfTimestamp = Utils.GetLatestTimtestampFromPbf(index);
+var pbfTimestamp = Utils.GetLatestTimestampFromPbf(index);
 Console.WriteLine($"PBF timestamp {pbfTimestamp}.");
 IReplicationDiffEnumerator enumerator = new CatchupReplicationDiffEnumerator(pbfTimestamp);
 IssuesData? oldIssuesData = pbfOnly ? null : await IssuesUploader.DownloadAsync();
@@ -80,9 +80,10 @@ retryProcessing:
             };
             foreach (var analyzer in analyzers)
             {
-                Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}.");
+                Console.WriteLine($"{DateTime.Now} Starting filtering relevant things...");
                 var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings).ToArray();
                 Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevantThings.Length}.");
+                Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}...");
                 var issues = analyzer.GetIssues(relevantThings, dbWithChanges).ToList();
                 Console.WriteLine($"{DateTime.Now} Found {issues.Count} issues.");
                 newIssuesData.AllIssues.AddRange(issues);

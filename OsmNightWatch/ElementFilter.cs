@@ -19,10 +19,15 @@ namespace OsmNightWatch
         
         public List<TagFilter> Tags { get; }
 
-        public ElementFilter(OsmGeoType geoType, IEnumerable<TagFilter> tags)
-        {
+        public bool NeedsWays { get; }
+        
+        public bool NeedsNodes { get; }
+
+        public ElementFilter(OsmGeoType geoType, IEnumerable<TagFilter> tags, bool needsWays = false, bool needsNodes = false) {
             GeoType = geoType;
             Tags = tags.ToList();
+            NeedsWays = needsWays;
+            NeedsNodes = needsNodes;
         }
 
         public bool Matches(OsmGeo element)

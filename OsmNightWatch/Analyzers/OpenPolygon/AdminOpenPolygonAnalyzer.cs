@@ -10,14 +10,11 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace OsmNightWatch.Analyzers.OpenPolygon
-{
-    public class AdminOpenPolygonAnalyzer : IOsmAnalyzer
-    {
+namespace OsmNightWatch.Analyzers.OpenPolygon {
+    public class AdminOpenPolygonAnalyzer : IOsmAnalyzer {
         public string AnalyzerName => "OpenAdminPolygon";
 
-        private bool? IsRelationValid(Relation relation, IOsmGeoSource osmSource, out bool fineWhenIgnoringOuter, out int adminLevel, out string friendlyName)
-        {
+        private bool? IsRelationValid(Relation relation, IOsmGeoSource osmSource, out bool fineWhenIgnoringOuter, out int adminLevel, out string friendlyName) {
             fineWhenIgnoringOuter = false;
             adminLevel = -1;
             if (!relation.Tags.TryGetValue("name:en", out friendlyName))
@@ -51,20 +48,18 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
             return false;
         }
 
-        public FilterSettings FilterSettings { get; } = new FilterSettings()
-        {
+        public FilterSettings FilterSettings { get; } = new FilterSettings() {
             Filters = new List<ElementFilter>()
             {
                 new ElementFilter(OsmGeoType.Relation, new[] {
                     new TagFilter("boundary", "administrative"),
                     new TagFilter("type", "boundary"),
                     new TagFilter("admin_level", "2", "3","4","5","6", "7", "8")
-                })
+                }, true,false)
             }
         };
 
-        public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource osmSource)
-        {
+        public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource osmSource) {
             Utils.BatchLoad(relevantThings, osmSource, true, false);
 
             foreach (var relevantThing in relevantThings)
@@ -78,8 +73,7 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
                     {
                         issueType += adminLevel;
                     }
-                    yield return new IssueData()
-                    {
+                    yield return new IssueData() {
                         IssueType = issueType,
                         OsmType = "R",
                         FriendlyName = friendlyName,
@@ -90,8 +84,7 @@ namespace OsmNightWatch.Analyzers.OpenPolygon
             }
         }
 
-        public static bool IsValid(Relation r, IOsmGeoSource db, bool ignoreMemberRole)
-        {
+        public static bool IsValid(Relation r, IOsmGeoSource db, bool ignoreMemberRole) {
             var hashSet = new HashSet<long>();
 
             foreach (var way in r.Members.Where(m => m.Type == OsmGeoType.Way && (ignoreMemberRole ? true : (m.Role == "inner" || m.Role == "outer"))).Select(m => db.GetWay(m.Id)))

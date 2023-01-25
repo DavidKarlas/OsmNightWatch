@@ -7,30 +7,28 @@ using System.Text.Json;
 
 namespace OsmNightWatch.Analyzers.AdminCountPerAdmin2;
 
-public partial class AdminCountPerAdmin2Analyzer : IOsmAnalyzer
-{
+public partial class AdminCountPerAdmin2Analyzer : IOsmAnalyzer {
     public string AnalyzerName => nameof(AdminCountPerAdmin2Analyzer);
 
-    public FilterSettings FilterSettings { get; } = new FilterSettings()
-    {
+    public FilterSettings FilterSettings { get; } = new FilterSettings() {
         Filters = new List<ElementFilter>()
             {
                 new ElementFilter(OsmGeoType.Relation, new[] {
                     new TagFilter("boundary", "administrative"),
                     new TagFilter("type", "boundary"),
-                    new TagFilter("admin_level", "2", "3","4","5","6","7","8") })
+                    new TagFilter("admin_level", "2", "3","4","5","6","7","8") },
+                    true,
+                    true)
             }
     };
 
 
-    public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource)
-    {
+    public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource) {
         var state = new StateOfTheAdmins();
         Utils.BatchLoad(relevantThings, newOsmSource, true, true);
         var strIndex = new STRtree<ProcessingCountry>(220);
 
-        var countriesRelations = relevantThings.Where(r =>
-        {
+        var countriesRelations = relevantThings.Where(r => {
             if (!r.Tags.ContainsKey("ISO3166-1:alpha3"))
                 return false;
             return r.Tags["admin_level"] == "2";
@@ -38,8 +36,7 @@ public partial class AdminCountPerAdmin2Analyzer : IOsmAnalyzer
 
         foreach (var admin2 in countriesRelations)
         {
-            var country = new Country()
-            {
+            var country = new Country() {
                 EnglishName = admin2.Tags["name:en"],
                 Iso2 = admin2.Tags["ISO3166-1:alpha2"],
                 Iso3 = admin2.Tags["ISO3166-1:alpha3"],
@@ -51,8 +48,7 @@ public partial class AdminCountPerAdmin2Analyzer : IOsmAnalyzer
 
             if (newCountry.Polygon.Geometry == MultiPolygon.Empty)
             {
-                yield return new IssueData()
-                {
+                yield return new IssueData() {
                     IssueType = "CountryMissingPolygon",
                     FriendlyName = newCountry.Country.EnglishName,
                     OsmType = "R",
@@ -69,11 +65,9 @@ public partial class AdminCountPerAdmin2Analyzer : IOsmAnalyzer
         }
 
         var relevantAdmins = relevantThings.Where(r => r.Tags.TryGetValue("admin_level", out var admLvl) && admLvl != "2" && r.Id != 1473938).OfType<Relation>().Select(r => new ProcessingAdmin(r)).ToArray();
-        Parallel.ForEach(relevantAdmins, new ParallelOptions()
-        {
+        Parallel.ForEach(relevantAdmins, new ParallelOptions() {
             MaxDegreeOfParallelism = 48
-        }, (relation) =>
-        {
+        }, (relation) => {
             AssignAdminsToCountries(newOsmSource, strIndex, relation);
         });
 
@@ -101,8 +95,7 @@ public partial class AdminCountPerAdmin2Analyzer : IOsmAnalyzer
             var country = state.Countries.SingleOrDefault(c => c.RelationId == expectedCountry.RelationId);
             if (country == null)
             {
-                yield return new IssueData()
-                {
+                yield return new IssueData() {
                     IssueType = "MissingCountry",
                     FriendlyName = expectedCountry.EnglishName,
                     OsmType = "R",
@@ -115,8 +108,7 @@ public partial class AdminCountPerAdmin2Analyzer : IOsmAnalyzer
             {
                 foreach (var missingAdmin in trackedAdmins.Value.Except(country.Admins[trackedAdmins.Key]))
                 {
-                    yield return new IssueData()
-                    {
+                    yield return new IssueData() {
                         IssueType = "MissingAdmin",
                         FriendlyName = expectedCountry.EnglishName,
                         OsmType = "R",
@@ -126,8 +118,7 @@ public partial class AdminCountPerAdmin2Analyzer : IOsmAnalyzer
 
                 foreach (var extraAdmin in country.Admins[trackedAdmins.Key].Except(trackedAdmins.Value))
                 {
-                    yield return new IssueData()
-                    {
+                    yield return new IssueData() {
                         IssueType = "ExtraAdmin",
                         FriendlyName = expectedCountry.EnglishName,
                         OsmType = "R",
@@ -138,8 +129,7 @@ public partial class AdminCountPerAdmin2Analyzer : IOsmAnalyzer
         }
     }
 
-    private static void AssignAdminsToCountries(IOsmGeoBatchSource newOsmSource, STRtree<ProcessingCountry> strIndex, ProcessingAdmin admin)
-    {
+    private static void AssignAdminsToCountries(IOsmGeoBatchSource newOsmSource, STRtree<ProcessingCountry> strIndex, ProcessingAdmin admin) {
         foreach (var coordinate in ExtractCoordinates.ExtractCoordinatesFromRelation(admin.Admin, newOsmSource))
         {
             foreach (var country in strIndex.Query(new Envelope(coordinate)))

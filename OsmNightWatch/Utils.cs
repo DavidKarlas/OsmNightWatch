@@ -15,7 +15,7 @@ namespace OsmNightWatch
 {
     static class Utils
     {
-        public static DateTime GetLatestTimtestampFromPbf(PbfIndex pbfIndex)
+        public static DateTime GetLatestTimestampFromPbf(PbfIndex pbfIndex)
         {
             var offset = pbfIndex.GetLastNodeOffset();
             var lastNodesWithMeta = NodesParser.LoadNodesWithMetadata(pbfIndex.PbfPath, offset).Last();
@@ -24,9 +24,9 @@ namespace OsmNightWatch
             return datetime;
         }
 
-        public static void BatchLoad(IEnumerable<OsmGeo> relevatThings, IOsmGeoBatchSource osmSource, bool ways, bool nodes)
+        public static void BatchLoad(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource osmSource, bool ways, bool nodes)
         {
-            var allRelations = RecursivlyLoadAllRelations(relevatThings, osmSource);
+            var allRelations = RecursivelyLoadAllRelations(relevantThings, osmSource);
             var waysToLoad = new HashSet<long>();
             var nodesToLoad = new HashSet<long>();
             foreach (var relation in allRelations)
@@ -42,15 +42,15 @@ namespace OsmNightWatch
             osmSource.BatchLoad(wayIds: waysToLoad);
             if (nodes)
             {
-                foreach (var way in relevatThings.Union(waysToLoad.Select(id => osmSource.Get(OsmGeoType.Way, id))).OfType<Way>())
+                foreach (var way in relevantThings.Union(waysToLoad.Select(id => osmSource.Get(OsmGeoType.Way, id))).OfType<Way>())
                     nodesToLoad.UnionWith(way.Nodes);
                 osmSource.BatchLoad(nodeIds: nodesToLoad);
             }
         }
 
-        private static List<Relation> RecursivlyLoadAllRelations(IEnumerable<OsmGeo> relevatThings, IOsmGeoBatchSource osmSource)
+        private static List<Relation> RecursivelyLoadAllRelations(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource osmSource)
         {
-            var relationsBag = new ConcurrentBag<Relation>(relevatThings.OfType<Relation>());
+            var relationsBag = new ConcurrentBag<Relation>(relevantThings.OfType<Relation>());
             Dictionary<long, Relation> dictionaryOfLoadedRelations;
             while (true)
             {

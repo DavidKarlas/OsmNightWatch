@@ -1,10 +1,8 @@
 ﻿using OsmNightWatch.Lib;
 using OsmSharp;
 
-namespace OsmNightWatch.Analyzers.BrokenCoastline
-{
-    public class BrokenCoastlineAnalyzer : IOsmAnalyzer
-    {
+namespace OsmNightWatch.Analyzers.BrokenCoastline {
+    public class BrokenCoastlineAnalyzer : IOsmAnalyzer {
         public string AnalyzerName => "BrokenCoastLine";
 
         public Dictionary<int, string> IssueDetails = new()
@@ -14,16 +12,17 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             { 3, "Way not forming a proper ring" }
         };
 
-        public FilterSettings FilterSettings { get; } = new FilterSettings()
-        {
+        public FilterSettings FilterSettings { get; } = new FilterSettings() {
             Filters = new List<ElementFilter>()
             {
-                new ElementFilter(OsmGeoType.Way, new[] { new TagFilter("natural", "coastline") })
+                new ElementFilter(OsmGeoType.Way,
+                    new[] { new TagFilter("natural", "coastline") },
+                    false,
+                    false)
             }
         };
 
-        public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource)
-        {
+        public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource) {
             //Uncomment line below when we decide we need Nodes information...
             //Utils.BatchLoad(relevantThings, newOsmSource, true, true);
             var (issuesNodes, issuesWays) = new CoastlineValidationTest().Visit(relevantThings, newOsmSource);
@@ -31,8 +30,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             {
                 foreach (var (way, detailsNum) in issuesWays)
                 {
-                    yield return new IssueData()
-                    {
+                    yield return new IssueData() {
                         IssueType = AnalyzerName,
                         OsmType = "W",
                         OsmId = way.Id!.Value,
@@ -45,8 +43,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             {
                 foreach (var (nodeId, detailsNum) in issuesNodes)
                 {
-                    yield return new IssueData()
-                    {
+                    yield return new IssueData() {
                         IssueType = AnalyzerName,
                         OsmType = "N",
                         OsmId = nodeId,
