@@ -124,8 +124,8 @@ async Task<OsmChange?> DownloadDiff(ReplicationConfig config, long sequenceNumbe
     {
         Directory.CreateDirectory(Path.GetDirectoryName(cachePath));
         using FileStream fsw = File.Create(cachePath);
-        using Stream stream = await httpClient.GetStreamAsync(url);
-        await stream.CopyToAsync(fsw);
+        using Stream stream = await httpClient.GetStreamAsync(url, new CancellationTokenSource(120_000).Token);
+        await stream.CopyToAsync(fsw, new CancellationTokenSource(120_000).Token);
     }
     using FileStream fs = File.OpenRead(cachePath);
     using GZipStream stream2 = new GZipStream(fs, CompressionMode.Decompress);
