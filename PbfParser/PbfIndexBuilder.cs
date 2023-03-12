@@ -123,13 +123,8 @@ namespace OsmNightWatch.PbfParsing
             var uncompressedData = new ReadOnlySpan<byte>(uncompressbuffer, 0, (int)uncompressedDataSize);
             var stringTableSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
             uncompressedData = uncompressedData.Slice(stringTableSize);
-            //var targetLength = uncompressedData.Length - stringTableSize;
-            //while (uncompressedData.Length > targetLength)
-            //{
-            //    var size = BinSerialize.ReadProtoString(ref uncompressedData);
-            //}
-            var primitivegroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
-            var lengthAtEnd = uncompressedData.Length - primitivegroupSize;
+            var primitiveGroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
+            var lengthAtEnd = uncompressedData.Length - primitiveGroupSize;
             while (uncompressedData.Length > lengthAtEnd)
             {
                 var (index, primitiveSize) = BinSerialize.ReadProtoByteArraySize(ref uncompressedData);
@@ -147,11 +142,8 @@ namespace OsmNightWatch.PbfParsing
                             return (OsmGeoType.Node, currentNodeId);// return first node since right now we only care about that
                         }
                         uncompressedData = uncompressedData.Slice(uncompressedData.Length - lengthAtEndDenseNodes);
-
-                        //if (uncompressedData.Length == 0)
-                        //    return -1;
-                        primitivegroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
-                        lengthAtEnd = uncompressedData.Length - primitivegroupSize;
+                        primitiveGroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
+                        lengthAtEnd = uncompressedData.Length - primitiveGroupSize;
                         break;
                     case 3:
                         BinSerialize.EnsureProtoIndexAndType(ref uncompressedData, 1, 0);
@@ -308,7 +300,7 @@ namespace OsmNightWatch.PbfParsing
             return relationOffsets.Select(o => o.FileOffset).ToList();
         }
 
-        public List<(long FileOffset, HashSet<long>? AllElementsInside)> CaclulateFileOffsets(IEnumerable<long> elementsToLoad, OsmGeoType type)
+        public List<(long FileOffset, HashSet<long>? AllElementsInside)> CalculateFileOffsets(IEnumerable<long> elementsToLoad, OsmGeoType type)
         {
             var result = new List<(long FileOffset, HashSet<long>?)>();
             var sortedElements = elementsToLoad.ToArray();
@@ -354,6 +346,10 @@ namespace OsmNightWatch.PbfParsing
         public long GetLastNodeOffset()
         {
             return nodeOffsets.Last().FileOffset;
+        }
+        public long GetFirstNodeIdInLastOffset()
+        {
+            return nodeOffsets.Last().FirstNodeId;
         }
     }
 }

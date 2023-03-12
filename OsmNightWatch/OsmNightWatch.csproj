@@ -27,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OsmNightWatch.Lib\OsmNightWatch.Lib.csproj" />
+    <ProjectReference Include="..\PbfParser\PbfParser.csproj" />
   </ItemGroup>
 
 </Project>

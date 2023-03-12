@@ -97,7 +97,7 @@ namespace OsmNightWatch
             (baseSource as IOsmGeoBatchSource)?.BatchLoad(nodeIds, wayIds, relationIds);
         }
 
-        Dictionary<FilterSettings, List<OsmGeo>> _cache = new();
+        Dictionary<FilterSettings, IEnumerable<OsmGeo>> _cache = new();
 
         public IEnumerable<OsmGeo> Filter(FilterSettings filterSettings)
         {
@@ -110,7 +110,7 @@ namespace OsmNightWatch
             {
                 if (!_cache.TryGetValue(filterSettings, out var results))
                 {
-                    _cache[filterSettings] = results = baseFilterableSource.Filter(filterSettings).ToList();
+                    _cache[filterSettings] = results = baseFilterableSource.Filter(filterSettings);
                 }
 
                 foreach (var baseResult in results)

@@ -16,7 +16,7 @@ namespace OsmNightWatch.PbfParsing
 
         public static Dictionary<long, Node> LoadNodes(HashSet<long> nodesToLoad, PbfIndex index)
         {
-            var fileOffsets = index.CaclulateFileOffsets(nodesToLoad, OsmGeoType.Node);
+            var fileOffsets = index.CalculateFileOffsets(nodesToLoad, OsmGeoType.Node);
             var nodeBags = new ConcurrentBag<Node>();
             ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer) =>
             {

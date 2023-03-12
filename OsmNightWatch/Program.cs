@@ -10,14 +10,16 @@ using System.Xml.Serialization;
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
 
-var path = @"C:\COSMOS\planet-221226.osm.pbf";
-bool pbfOnly = false;
+var path = @"C:\COSMOS\planet-230130.osm.pbf";
+bool pbfOnly = true;
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
 var analyzers = new IOsmAnalyzer[] {
-    new OsmNightWatch.Analyzers.AdminCountPerAdmin2.AdminCountPerAdmin2Analyzer(),
-    new OsmNightWatch.Analyzers.OpenPolygon.AdminOpenPolygonAnalyzer(),
-    new OsmNightWatch.Analyzers.BrokenCoastline.BrokenCoastlineAnalyzer() };
+    //new OsmNightWatch.Analyzers.AdminCountPerAdmin2.AdminCountPerAdmin2Analyzer(),
+    //new OsmNightWatch.Analyzers.OpenPolygon.AdminOpenPolygonAnalyzer(),
+    //new OsmNightWatch.Analyzers.BrokenCoastline.BrokenCoastlineAnalyzer()
+    new bla()
+    };
 var dbWithChanges = new OsmDatabaseWithReplicationData(pbfDb);
 var pbfTimestamp = Utils.GetLatestTimestampFromPbf(index);
 Console.WriteLine($"PBF timestamp {pbfTimestamp}.");
@@ -81,8 +83,8 @@ retryProcessing:
             foreach (var analyzer in analyzers)
             {
                 Console.WriteLine($"{DateTime.Now} Starting filtering relevant things...");
-                var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings).ToArray();
-                Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevantThings.Length}.");
+                var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings);
+                //Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevantThings.Length}.");
                 Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}...");
                 var issues = analyzer.GetIssues(relevantThings, dbWithChanges).ToList();
                 Console.WriteLine($"{DateTime.Now} Found {issues.Count} issues.");
