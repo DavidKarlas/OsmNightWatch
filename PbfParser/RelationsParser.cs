@@ -14,7 +14,7 @@ namespace OsmNightWatch.PbfParsing
             var indexFilters = new IndexedTagFilters(filters.Where(f => f.GeoType == OsmGeoType.Relation).SelectMany(f => f.Tags));
             var relationsBag = new ConcurrentBag<Relation>();
             ParallelParse(index.PbfPath, index.GetAllRelationFileOffsets().Select(o => (o, (HashSet<long>?)null)).ToList(),
-                (HashSet<long>? relevantIds, byte[] readBuffer) =>
+                (HashSet<long>? relevantIds, byte[] readBuffer, object? state) =>
                 {
                     ParseRelations(relationsBag, null, indexFilters, readBuffer);
                 });
@@ -44,7 +44,7 @@ namespace OsmNightWatch.PbfParsing
                     return dictionaryOfLoadedRelations.Values;
                 }
                 ParallelParse(index.PbfPath, index.CalculateFileOffsets(unloadedChildren, OsmGeoType.Relation),
-                    (HashSet<long>? relevantIds, byte[] readBuffer) =>
+                    (HashSet<long>? relevantIds, byte[] readBuffer, object? state) =>
                     {
                         ParseRelations(relationsBag, relevantIds, null, readBuffer);
                     });
@@ -55,7 +55,7 @@ namespace OsmNightWatch.PbfParsing
         {
             var fileOffsets = index.CalculateFileOffsets(relationsToLoad, OsmGeoType.Relation);
             var relationsBag = new ConcurrentBag<Relation>();
-            ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer) =>
+            ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer, object? state) =>
             {
                 ParseRelations(relationsBag, relevantIds, null, readBuffer);
             });

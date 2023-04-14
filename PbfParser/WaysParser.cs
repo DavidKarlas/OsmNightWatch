@@ -1,6 +1,7 @@
 ﻿using OsmSharp;
 using OsmSharp.Tags;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Text;
 using static OsmNightWatch.PbfParsing.ParsingHelper;
@@ -13,8 +14,10 @@ namespace OsmNightWatch.PbfParsing
         {
             var fileOffsets = index.CalculateFileOffsets(waysToLoad, OsmGeoType.Way);
             var waysBag = new ConcurrentBag<Way>();
-            ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer) => {
-                ParseWays(waysBag, relevantIds, null, readBuffer);
+            ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
+                ParseWays(relevantIds, (way) => {
+                    waysBag.Add(way);
+                }, null, readBuffer);
             });
 
             return waysBag.ToDictionary(w => (long)w.Id!, w => w);
@@ -23,14 +26,14 @@ namespace OsmNightWatch.PbfParsing
         public static IEnumerable<Way> Parse(IEnumerable<ElementFilter> filters, PbfIndex index)
         {
             var indexFilters = new IndexedTagFilters(filters.Where(f => f.GeoType == OsmGeoType.Way).SelectMany(f => f.Tags));
-            var waysQueue = new ConcurrentQueue<ConcurrentBag<Way>>();
+            var waysQueue = new ConcurrentQueue<List<Way>>();
             var task = Task.Run(() => ParallelParse(index.PbfPath, index.GetAllWayFileOffsets().Select(o => (o, (HashSet<long>?)null)).ToList(),
-                (HashSet<long>? relevantIds, byte[] readBuffer) => {
-                    var waysBag = new ConcurrentBag<Way>();
-                    ParseWays(waysBag, null, indexFilters, readBuffer);
+                (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
+                    var waysBag = new List<Way>();
+                    ParseWays(null, (way) => {
+                        waysBag.Add(way);
+                    }, indexFilters, readBuffer);
                     waysQueue.Enqueue(waysBag);
-                    if(waysQueue.Count>10)
-                        Thread.Sleep(1000);
                 }));
             while (task.IsCompleted == false || waysQueue.Count > 0)
             {
@@ -41,14 +44,21 @@ namespace OsmNightWatch.PbfParsing
                         yield return way;
                     }
                 }
-                Console.WriteLine();
             }
         }
-
-        public static void ParseWaysNodes(PbfIndex index, Action<long, long> callback)
+        public static void Process(Action<Way> action, IEnumerable<ElementFilter> filters, PbfIndex index)
         {
+            var indexFilters = new IndexedTagFilters(filters.Where(f => f.GeoType == OsmGeoType.Way).SelectMany(f => f.Tags));
             ParallelParse(index.PbfPath, index.GetAllWayFileOffsets().Select(o => (o, (HashSet<long>?)null)).ToList(),
-                (HashSet<long>? relevantIds, byte[] readBuffer) => {
+                (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
+                    ParseWays(null, action, indexFilters, readBuffer);
+                });
+        }
+
+        public static void ParseWaysNodes(PbfIndex index, List<(long FileOffset, HashSet<long>? AllElementsInside)> fileOffsets, Func<IWayNodesCallback> callback)
+        {
+            ParallelParse(index.PbfPath, fileOffsets,
+                (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
                     ReadOnlySpan<byte> dataSpan = readBuffer;
                     Decompress(ref dataSpan, out var uncompressbuffer, out var uncompressedSpan, out var uncompressedSize);
                     var stringTableSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedSpan).size;
@@ -67,6 +77,11 @@ namespace OsmNightWatch.PbfParsing
                             }
                             BinSerialize.EnsureProtoIndexAndType(ref uncompressedSpan, 1, 0);
                             var wayId = BinSerialize.ReadPackedLong(ref uncompressedSpan);
+                            if (!relevantIds!.Contains(wayId))
+                            {
+                                uncompressedSpan = uncompressedSpan.Slice(uncompressedSpan.Length - expectedLengthAtEndOfPrimitive);
+                                continue;
+                            }
                             while (uncompressedSpan.Length > expectedLengthAtEndOfPrimitive)
                             {
                                 var (innerIndex, type) = BinSerialize.ReadProtoIndexAndType(ref uncompressedSpan);
@@ -91,20 +106,20 @@ namespace OsmNightWatch.PbfParsing
                                         while (uncompressedSpan.Length > expectedLengthAtEndOfRefs)
                                         {
                                             nodeId += BinSerialize.ReadZigZagLong(ref uncompressedSpan);
-                                            callback(wayId, nodeId);
+                                            ((IWayNodesCallback)state!).Invoke (wayId, nodeId);
                                         }
                                         break;
                                 }
                             }
                         }
                     }
-                });
+                }, callback);
         }
-        
-        private static void ParseWays(ConcurrentBag<Way> waysBag, HashSet<long>? waysToLoad, IndexedTagFilters? tagFilters, byte[] readBuffer)
+
+        private static void ParseWays(HashSet<long>? waysToLoad, Action<Way> action, IndexedTagFilters? tagFilters, byte[] readBuffer)
         {
             ReadOnlySpan<byte> dataSpan = readBuffer;
-            Decompress(ref dataSpan, out var uncompressbuffer, out var uncompressedSpan, out var uncompressedSize);
+            Decompress(ref dataSpan, out var uncompressedBuffer, out var uncompressedSpan, out var uncompressedSize);
             var stringTableSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedSpan).size;
             var stringTableTargetLength = uncompressedSpan.Length - stringTableSize;
             var utf8ToIdMappings = new Dictionary<Memory<byte>, int>();
@@ -122,7 +137,7 @@ namespace OsmNightWatch.PbfParsing
                         }
                     }
                 }
-                stringSpans.Add(new Memory<byte>(uncompressbuffer, (int)uncompressedSize - uncompressedSpan.Length, size));
+                stringSpans.Add(new Memory<byte>(uncompressedBuffer, (int)uncompressedSize - uncompressedSpan.Length, size));
                 uncompressedSpan = uncompressedSpan.Slice(size);
             }
 
@@ -155,8 +170,8 @@ namespace OsmNightWatch.PbfParsing
             var expectedValues = new Dictionary<int, HashSet<int>>();
             while (uncompressedSpan.Length > 0)
             {
-                var primitivegroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedSpan).size;
-                var expectedLengthAtEndOfPrimitiveGroup = uncompressedSpan.Length - primitivegroupSize;
+                var primitiveGroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedSpan).size;
+                var expectedLengthAtEndOfPrimitiveGroup = uncompressedSpan.Length - primitiveGroupSize;
                 while (uncompressedSpan.Length > expectedLengthAtEndOfPrimitiveGroup)
                 {
                     tagKeys.Clear();
@@ -186,7 +201,7 @@ namespace OsmNightWatch.PbfParsing
                     }
                     else
                     {
-                        accepted= tagFilters == null || tagFilters.Utf8TagsFilter.Count == 0;
+                        accepted = tagFilters == null || tagFilters.Utf8TagsFilter.Count == 0;
                     }
                     nodes.Clear();
                     while (uncompressedSpan.Length > expectedLengthAtEndOfPrimitive)
@@ -268,7 +283,7 @@ namespace OsmNightWatch.PbfParsing
                         {
                             tags.Add(new Tag(Encoding.UTF8.GetString(stringSpans[tagKeys[i]].Span), Encoding.UTF8.GetString(stringSpans[tagValues[i]].Span)));
                         }
-                        waysBag.Add(new Way() {
+                        action(new Way() {
                             Id = wayId,
                             Nodes = nodes.ToArray(),
                             Tags = tags
@@ -276,13 +291,68 @@ namespace OsmNightWatch.PbfParsing
                         waysToLoad?.Remove(wayId);
                         if (waysToLoad != null && waysToLoad.Count == 0)
                         {
-                            ArrayPool<byte>.Shared.Return(uncompressbuffer);
+                            ArrayPool<byte>.Shared.Return(uncompressedBuffer);
                             return;
                         }
                     }
                 }
             }
-            ArrayPool<byte>.Shared.Return(uncompressbuffer);
+            ArrayPool<byte>.Shared.Return(uncompressedBuffer);
+        }
+
+        public interface IWayNodesCallback
+        {
+            void Invoke(long nodeId, long wayId);
+        }
+
+        public static void DumpNodeToWaysMapping(PbfIndex index, string folder, HashSet<long> waysToLoad)
+        {
+            var fileOffsets = index.CalculateFileOffsets(waysToLoad, OsmGeoType.Way);
+            const int NodesPerFile = 100_000_000;
+            var groupsOfNodes = (int)(index.GetFirstNodeIdInLastOffset() / NodesPerFile + 1);
+            if (Directory.Exists(folder))
+                Directory.Delete(folder, true);
+            Directory.CreateDirectory(folder);
+
+            var executors = new List<NodeToWaysExecutor>();
+            ParseWaysNodes(index, fileOffsets, () => {
+                var executor = new NodeToWaysExecutor(folder, groupsOfNodes, NodesPerFile);
+                executors.Add(executor);
+                return executor;
+            });
+            executors.ToList().ForEach(f => f.Dispose());
+        }
+
+        class NodeToWaysExecutor : IWayNodesCallback, IDisposable
+        {
+            private int nodesPerFile;
+            private readonly FileStream[] fileStreams;
+
+            public NodeToWaysExecutor(string folder, int groupsOfNodes, int nodesPerFile)
+            {
+                this.nodesPerFile = nodesPerFile;
+                fileStreams = Enumerable.Range(0, groupsOfNodes).Select((i) => {
+                    var fileName = Path.Combine(folder, $"{i}-{Guid.NewGuid()}.bin");
+                    return new FileStream(fileName, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.ReadWrite, 1024 * 1024);
+                }).ToArray();
+            }
+
+            public void Invoke(long wayId, long nodeId)
+            {
+                Span<byte> buffer = stackalloc byte[16];
+                var fileStream = fileStreams[(int)(nodeId / nodesPerFile)];
+                BinaryPrimitives.WriteInt64LittleEndian(buffer, nodeId);
+                BinaryPrimitives.WriteInt64LittleEndian(buffer.Slice(8), wayId);
+                fileStream.Write(buffer);
+            }
+
+            public void Dispose()
+            {
+                foreach (var stream in fileStreams)
+                {
+                    stream.Close();
+                }
+            }
         }
     }
 }

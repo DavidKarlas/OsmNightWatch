@@ -13,4 +13,13 @@ namespace OsmNightWatch.Analyzers
 
         IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource);
     }
+
+    public interface IIncrementalOsmAnalyzer
+    {
+        string AnalyzerName { get; }
+
+        FilterSettings FilterSettings { get; }
+
+        Func<OsmGeo, IssueData?> GetValidator();
+    }
 }

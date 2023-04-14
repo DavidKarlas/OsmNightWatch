@@ -4,13 +4,14 @@ using OsmNightWatch.Lib;
 using OsmNightWatch.PbfParsing;
 using OsmSharp.Changesets;
 using OsmSharp.Replication;
+using System.Diagnostics;
 using System.IO.Compression;
 using System.Xml.Serialization;
 
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
 
-var path = @"C:\COSMOS\planet-230130.osm.pbf";
+var path = @"C:\COSMOS\planet-230403.osm.pbf";
 bool pbfOnly = true;
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
@@ -18,8 +19,21 @@ var analyzers = new IOsmAnalyzer[] {
     //new OsmNightWatch.Analyzers.AdminCountPerAdmin2.AdminCountPerAdmin2Analyzer(),
     //new OsmNightWatch.Analyzers.OpenPolygon.AdminOpenPolygonAnalyzer(),
     //new OsmNightWatch.Analyzers.BrokenCoastline.BrokenCoastlineAnalyzer()
-    new bla()
     };
+var inrcementalAnalyzers = new IIncrementalOsmAnalyzer[] {
+    new bla()
+};
+
+var sw = Stopwatch.StartNew();
+foreach (var analyzer in inrcementalAnalyzers)
+{
+    var validator = analyzer.GetValidator();
+    var issues = pbfDb.Validate(validator, analyzer.FilterSettings);
+}
+
+Console.WriteLine(sw.Elapsed);
+return;
+
 var dbWithChanges = new OsmDatabaseWithReplicationData(pbfDb);
 var pbfTimestamp = Utils.GetLatestTimestampFromPbf(index);
 Console.WriteLine($"PBF timestamp {pbfTimestamp}.");
@@ -75,11 +89,11 @@ retryProcessing:
         // Only do processing old changesets newer than already processed data..
         if (pbfOnly || replicationState!.StartTimestamp > oldIssuesData!.DateTime)
         {
-            var newIssuesData = new IssuesData()
-            {
+            var newIssuesData = new IssuesData() {
                 DateTime = replicationState?.EndTimestamp ?? default,
                 MinutelySequenceNumber = (int)(replicationState?.SequenceNumber ?? 0)
             };
+
             foreach (var analyzer in analyzers)
             {
                 Console.WriteLine($"{DateTime.Now} Starting filtering relevant things...");

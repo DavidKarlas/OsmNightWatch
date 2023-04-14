@@ -1,16 +1,20 @@
 ﻿using OsmNightWatch.Lib;
 using OsmSharp;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace OsmNightWatch.Analyzers.CountriesTracker {
-    public class CountriesTracker : IOsmAnalyzer {
-        public string AnalyzerName => throw new NotImplementedException();
-
-        public FilterSettings FilterSettings => throw new NotImplementedException();
+    public class CountriesTracker
+    {
+        public FilterSettings FilterSettings { get; } = new FilterSettings() {
+            Filters = new List<ElementFilter>()
+                {
+                new ElementFilter(OsmGeoType.Relation, new[] {
+                    new TagFilter("boundary", "administrative"),
+                    new TagFilter("type", "boundary"),
+                    new TagFilter("admin_level", "2") },
+                    true,
+                    true)
+            }
+        };
 
         public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource) {
             throw new NotImplementedException();

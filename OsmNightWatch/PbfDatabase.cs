@@ -1,9 +1,11 @@
 ﻿using OsmNightWatch;
+using OsmNightWatch.Lib;
 using OsmNightWatch.PbfParsing;
 using OsmSharp;
 using OsmSharp.Streams;
+using System.Collections.Concurrent;
 
-internal class PbfDatabase : IOsmGeoFilterableSource
+internal class PbfDatabase : IOsmValidateSource
 {
     private PbfIndex index;
 
@@ -140,5 +142,23 @@ internal class PbfDatabase : IOsmGeoFilterableSource
                     break;
             }
         }
+    }
+
+    public IEnumerable<IssueData> Validate(Func<OsmGeo, IssueData?> validator, FilterSettings filterSettings)
+    {
+        var issues = new ConcurrentBag<IssueData>();
+        //NodesParser.Process((way) => {
+        //    if (validator(way) is IssueData issue)
+        //    {
+        //        issues.Add(issue);
+        //    }
+        //}, filterSettings.Filters, index);
+        //WaysParser.Process((way) => {
+        //    if (validator(way) is IssueData issue)
+        //    {
+        //        issues.Add(issue);
+        //    }
+        //}, filterSettings.Filters, index);
+        return issues;
     }
 }

@@ -1,4 +1,5 @@
-﻿using OsmSharp;
+﻿using OsmNightWatch.Lib;
+using OsmSharp;
 using OsmSharp.Changesets;
 using OsmSharp.Db;
 
