@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <PackageReference Include="LibDeflate.NET" Version="1.9.1" />
-    <PackageReference Include="OsmSharp" Version="6.2.0" />
+    <PackageReference Include="OsmSharp" Version="7.0.0-pre022" />
   </ItemGroup>
 
 </Project>

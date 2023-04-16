@@ -1,11 +1,11 @@
-﻿using OsmNightWatch.Lib;
+﻿using FASTER.core;
 using OsmSharp;
 using OsmSharp.Changesets;
 using OsmSharp.Db;
 
 namespace OsmNightWatch
 {
-    public class OsmDatabaseWithReplicationData : IOsmGeoFilterableSource
+    public class OsmDatabaseWithReplicationData : IOsmGeoSource
     {
         private readonly IOsmGeoSource baseSource;
 
@@ -13,13 +13,20 @@ namespace OsmNightWatch
         private Dictionary<long, Way?> changesetWays = new();
         private Dictionary<long, Node?> changesetNodes = new();
 
-        public OsmDatabaseWithReplicationData(IOsmGeoSource baseSource)
+        private KeyValueDatabase keyValueDatabase;
+
+        public OsmDatabaseWithReplicationData(IOsmGeoSource baseSource, KeyValueDatabase keyValueDatabase)
         {
             this.baseSource = baseSource;
+            this.keyValueDatabase = keyValueDatabase;
         }
 
         public void ApplyChangeset(OsmChange changeset)
         {
+            changesetNodes.Clear();
+            changesetWays.Clear();
+            changesetRelations.Clear();
+
             foreach (var change in changeset.Create)
             {
                 Put(change);
@@ -60,6 +67,10 @@ namespace OsmNightWatch
                         throw new NotImplementedException();
                 }
             }
+
+            keyValueDatabase.UpdateNodes(changesetNodes);
+            keyValueDatabase.UpdateWays(changesetWays);
+            keyValueDatabase.UpdateRelations(changesetRelations);
         }
 
         private void Put(OsmGeo element)
@@ -78,89 +89,6 @@ namespace OsmNightWatch
             }
         }
 
-        public void BatchLoad(HashSet<long>? nodeIds, HashSet<long>? wayIds, HashSet<long>? relationIds)
-        {
-            if (nodeIds != null)
-            {
-                nodeIds = new HashSet<long>(nodeIds);
-                nodeIds.ExceptWith(changesetNodes.Keys);
-            }
-            if (wayIds != null)
-            {
-                wayIds = new HashSet<long>(wayIds);
-                wayIds.ExceptWith(changesetWays.Keys);
-            }
-            if (relationIds != null)
-            {
-                relationIds = new HashSet<long>(relationIds);
-                relationIds.ExceptWith(changesetRelations.Keys);
-            }
-            (baseSource as IOsmGeoBatchSource)?.BatchLoad(nodeIds, wayIds, relationIds);
-        }
-
-        Dictionary<FilterSettings, IEnumerable<OsmGeo>> _cache = new();
-
-        public IEnumerable<OsmGeo> Filter(FilterSettings filterSettings)
-        {
-            var filters = filterSettings.Filters;
-            var nodeFilter = filters.Where(f => f.GeoType == OsmGeoType.Node).SingleOrDefault();
-            var wayFilter = filters.Where(f => f.GeoType == OsmGeoType.Way).SingleOrDefault();
-            var relationFilter = filters.Where(f => f.GeoType == OsmGeoType.Relation).SingleOrDefault();
-
-            if (baseSource is IOsmGeoFilterableSource baseFilterableSource)
-            {
-                if (!_cache.TryGetValue(filterSettings, out var results))
-                {
-                    _cache[filterSettings] = results = baseFilterableSource.Filter(filterSettings);
-                }
-
-                foreach (var baseResult in results)
-                {
-                    switch (baseResult)
-                    {
-                        case Node node:
-                            if (!changesetNodes.ContainsKey(node.Id!.Value))
-                                yield return node;
-                            break;
-                        case Way way:
-                            if (!changesetWays.ContainsKey(way.Id!.Value))
-                                yield return way;
-                            break;
-                        case Relation relation:
-                            if (!changesetRelations.ContainsKey(relation.Id!.Value))
-                                yield return relation;
-                            break;
-                        default:
-                            throw new NotImplementedException();
-                    }
-                }
-            }
-            if (nodeFilter != null)
-            {
-                foreach (var node in changesetNodes.Values)
-                {
-                    if (node != null && nodeFilter.Matches(node))
-                        yield return node;
-                }
-            }
-            if (wayFilter != null)
-            {
-                foreach (var way in changesetWays.Values)
-                {
-                    if (way != null && wayFilter.Matches(way))
-                        yield return way;
-                }
-            }
-            if (relationFilter != null)
-            {
-                foreach (var relation in changesetRelations.Values)
-                {
-                    if (relation != null && relationFilter.Matches(relation))
-                        yield return relation;
-                }
-            }
-        }
-
         public OsmGeo Get(OsmGeoType type, long id)
         {
             switch (type)
@@ -170,17 +98,29 @@ namespace OsmNightWatch
                     {
                         return node;
                     }
+                    else if (keyValueDatabase.TryGetNode(id, out var nodeFromDb))
+                    {
+                        return nodeFromDb;
+                    }
                     break;
                 case OsmGeoType.Way:
                     if (changesetWays.TryGetValue(id, out var way))
                     {
                         return way;
                     }
+                    else if (keyValueDatabase.TryGetWay(id, out var wayFromDb))
+                    {
+                        return wayFromDb;
+                    }
                     break;
                 case OsmGeoType.Relation:
                     if (changesetRelations.TryGetValue(id, out var relation))
                     {
                         return relation;
+                    }
+                    else if (keyValueDatabase.TryGetRelation(id, out var relationFromDb))
+                    {
+                        return relationFromDb;
                     }
                     break;
             }
