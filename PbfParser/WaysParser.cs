@@ -10,8 +10,10 @@ namespace OsmNightWatch.PbfParsing
 {
     public static class WaysParser
     {
-        public static Dictionary<long, Way> LoadWays(HashSet<long> waysToLoad, PbfIndex index)
+        public static IReadOnlyCollection<Way> LoadWays(HashSet<long>? waysToLoad, PbfIndex index)
         {
+            if (waysToLoad == null || waysToLoad.Count == 0)
+                return Array.Empty<Way>();
             var fileOffsets = index.CalculateFileOffsets(waysToLoad, OsmGeoType.Way);
             var waysBag = new ConcurrentBag<Way>();
             ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
@@ -20,7 +22,7 @@ namespace OsmNightWatch.PbfParsing
                 }, null, readBuffer);
             });
 
-            return waysBag.ToDictionary(w => (long)w.Id!, w => w);
+            return waysBag;
         }
 
         public static IEnumerable<Way> Parse(IEnumerable<ElementFilter> filters, PbfIndex index)
@@ -106,7 +108,7 @@ namespace OsmNightWatch.PbfParsing
                                         while (uncompressedSpan.Length > expectedLengthAtEndOfRefs)
                                         {
                                             nodeId += BinSerialize.ReadZigZagLong(ref uncompressedSpan);
-                                            ((IWayNodesCallback)state!).Invoke (wayId, nodeId);
+                                            ((IWayNodesCallback)state!).Invoke(wayId, nodeId);
                                         }
                                         break;
                                 }
@@ -283,11 +285,7 @@ namespace OsmNightWatch.PbfParsing
                         {
                             tags.Add(new Tag(Encoding.UTF8.GetString(stringSpans[tagKeys[i]].Span), Encoding.UTF8.GetString(stringSpans[tagValues[i]].Span)));
                         }
-                        action(new Way() {
-                            Id = wayId,
-                            Nodes = nodes.ToArray(),
-                            Tags = tags
-                        });
+                        action(new Way(wayId, nodes.ToArray(), tags));
                         waysToLoad?.Remove(wayId);
                         if (waysToLoad != null && waysToLoad.Count == 0)
                         {

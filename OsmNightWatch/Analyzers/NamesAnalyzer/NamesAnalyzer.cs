@@ -1,9 +1,9 @@
 ﻿using OsmNightWatch;
 using OsmNightWatch.Analyzers;
 using OsmNightWatch.Lib;
-using OsmSharp;
+using OsmNightWatch.PbfParsing;
 
-internal class bla : IIncrementalOsmAnalyzer
+internal class NamesAnalyzer
 {
     public string AnalyzerName => "bla";
 
@@ -23,7 +23,7 @@ internal class bla : IIncrementalOsmAnalyzer
             {
                 return new IssueData() {
                     OsmType = osmGeo.Type.ToString(),
-                    OsmId = (long)osmGeo.Id!,
+                    OsmId = osmGeo.Id!,
                     Details = osmGeo.Tags["name"],
                     IssueType = "Invalid characters",
                     FriendlyName = osmGeo.Tags["name"]

@@ -1,14 +1,13 @@
-﻿using FASTER.core;
-using LightningDB;
-using OsmSharp;
+﻿using LightningDB;
+using OsmNightWatch.Analyzers.AdminCountPerCountry;
+using OsmNightWatch.PbfParsing;
 using OsmSharp.IO.Binary;
+using OsmSharp.Tags;
+using ProtoBuf.WellKnownTypes;
 using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.Serialization.Formatters.Binary;
+using System.Diagnostics;
 using System.Text;
-using System.Threading.Tasks;
 using System.Xml.Linq;
 
 namespace OsmNightWatch
@@ -86,7 +85,7 @@ namespace OsmNightWatch
 
         private LightningDatabase OpenDb(LightningTransaction tx, string name)
         {
-            if(!databases.TryGetValue(name, out var db))
+            if (!databases.TryGetValue(name, out var db))
             {
                 databases[name] = db = tx.OpenDatabase(name, new DatabaseConfiguration() { Flags = DatabaseOpenFlags.Create });
             }
@@ -95,8 +94,11 @@ namespace OsmNightWatch
 
         public DateTime? GetTimestamp()
         {
-            using var tx = dbEnv.BeginTransaction();
-            using var db = tx.OpenDatabase("Settings", new DatabaseConfiguration() { Flags = DatabaseOpenFlags.Create });
+            if (transaction is not LightningTransaction tx)
+            {
+                throw new InvalidOperationException("Transaction not started!");
+            }
+            var db = OpenDb(tx, "Settings");
             var timestampValue = tx.Get(db, BitConverter.GetBytes(TimestampDbKey));
             if (timestampValue.resultCode == MDBResultCode.Success)
             {
@@ -104,88 +106,266 @@ namespace OsmNightWatch
             }
             return null;
         }
-        public void UpdateNodes(Dictionary<long, Node?> changesetNodes)
-        {
-            UpdateValues("Nodes", changesetNodes);
-        }
-
-        public void UpdateWays(Dictionary<long, Way?> changesetWays)
-        {
-            UpdateValues("Ways", changesetWays);
-        }
-
-        public void UpdateRelations(Dictionary<long, Relation?> changesetRelations)
-        {
-            UpdateValues("Relations", changesetRelations);
-        }
-
-        private void UpdateValues<T>(string dbName, Dictionary<long, T?> elements) where T : OsmGeo
+        public void UpdateNodes(Dictionary<long, Node?> changesetNodes, bool initial = false)
         {
             if (transaction is not LightningTransaction tx)
             {
                 throw new InvalidOperationException("Transaction not started!");
             }
-            var db = OpenDb(tx, dbName);
-            var memory = new MemoryStream(64 * 1024);
-            var buffer = new byte[8 * 1024];
+            var db = OpenDb(tx, "Nodes");
             Span<byte> keyBuffer = stackalloc byte[8];
-            foreach (var element in elements)
+            Span<byte> originalBuffer = stackalloc byte[16 * 1024];
+            foreach (var element in (initial ? (IEnumerable<KeyValuePair<long, Node?>>)changesetNodes.OrderBy(e => e.Key) : changesetNodes))
             {
-                BinaryPrimitives.WriteInt64LittleEndian(keyBuffer, element.Key);
+                BinaryPrimitives.WriteInt64BigEndian(keyBuffer, element.Key);
                 if (element.Value == null)
                 {
                     tx.Put(db, keyBuffer, ReadOnlySpan<byte>.Empty);
                 }
                 else
                 {
-                    memory.SetLength(0);
-                    BinarySerializer.Append(memory, element.Value, buffer);
-                    tx.Put(db, keyBuffer, memory.ToArray());
+                    var buffer = originalBuffer;
+                    BinSerialize.WriteDouble(ref buffer, element.Value.Latitude);
+                    BinSerialize.WriteDouble(ref buffer, element.Value.Longitude);
+                    WriteTags(ref buffer, element.Value.Tags);
+                    buffer = originalBuffer.Slice(0, originalBuffer.Length - buffer.Length);
+                    if (initial)
+                    {
+                        tx.Put(db, keyBuffer, buffer, PutOptions.AppendData);
+                    }
+                    else
+                    {
+                        tx.Put(db, keyBuffer, buffer);
+                    }
+                }
+            }
+        }
+
+        public void WriteRelationChangesTracker(int id, RelationChangesTracker tracker)
+        {
+            if (transaction is not LightningTransaction tx)
+            {
+                throw new InvalidOperationException("Transaction not started!");
+            }
+            var db = OpenDb(tx, "RelationChangesTracker");
+            var fileName = nameof(RelationChangesTracker) + "_" + id + ".db";
+            var result = tx.Put(db, BitConverter.GetBytes(1000 + id), Encoding.UTF8.GetBytes(fileName));
+
+            File.WriteAllBytes(fileName, tracker.Serialize());
+        }
+
+        public RelationChangesTracker ReadRelationChangesTracker(int id)
+        {
+            if (transaction is not LightningTransaction tx)
+            {
+                throw new InvalidOperationException("Transaction not started!");
+            }
+            var db = OpenDb(tx, "RelationChangesTracker");
+            var result = tx.Get(db, Encoding.UTF8.GetBytes(nameof(RelationChangesTracker) + id));
+            if (result.resultCode == MDBResultCode.Success)
+            {
+                var span = result.value.AsSpan();
+                return new RelationChangesTracker(Encoding.UTF8.GetString(span));
+            }
+            return new RelationChangesTracker(null);
+        }
+
+        private void WriteTags(ref Span<byte> span, TagsCollectionBase? tags)
+        {
+            if (tags == null)
+            {
+                return;
+            }
+            foreach (var tag in tags)
+            {
+                BinSerialize.WriteString(ref span, tag.Key);
+                BinSerialize.WriteString(ref span, tag.Value);
+            }
+        }
+
+        private TagsCollectionBase? ReadTags(ref ReadOnlySpan<byte> buffer)
+        {
+            if (buffer.Length == 0)
+            {
+                return null;
+            }
+            var tags = new TagsCollection();
+            while (buffer.Length > 0)
+            {
+                var key = BinSerialize.ReadString(ref buffer);
+                var value = BinSerialize.ReadString(ref buffer);
+                tags.Add(key, value);
+            }
+            return tags;
+        }
+
+        public void UpdateWays(Dictionary<long, Way?> changesetWays, bool initial = false)
+        {
+            if (transaction is not LightningTransaction tx)
+            {
+                throw new InvalidOperationException("Transaction not started!");
+            }
+            var db = OpenDb(tx, "Ways");
+            Span<byte> keyBuffer = stackalloc byte[8];
+            Span<byte> originalBuffer = stackalloc byte[128 * 1024];
+            foreach (var element in changesetWays)
+            {
+                BinaryPrimitives.WriteInt64BigEndian(keyBuffer, element.Key);
+                if (element.Value == null)
+                {
+                    tx.Put(db, keyBuffer, ReadOnlySpan<byte>.Empty);
+                }
+                else
+                {
+                    var buffer = originalBuffer;
+                    BinSerialize.WriteUShort(ref buffer, (ushort)element.Value.Nodes.Length);
+                    foreach (var nodeId in element.Value.Nodes)
+                    {
+                        BinSerialize.WriteLong(ref buffer, nodeId);
+                    }
+                    WriteTags(ref buffer, element.Value.Tags);
+                    tx.Put(db, keyBuffer, originalBuffer.Slice(0, originalBuffer.Length - buffer.Length));
+                }
+            }
+        }
+
+        public void UpdateRelations(Dictionary<long, Relation?> changesetRelations, bool initial = false)
+        {
+            if (transaction is not LightningTransaction tx)
+            {
+                throw new InvalidOperationException("Transaction not started!");
+            }
+
+            var db = OpenDb(tx, "Relations");
+            Span<byte> keyBuffer = stackalloc byte[8];
+            Span<byte> originalBuffer = stackalloc byte[1024 * 1024];
+            foreach (var element in changesetRelations)
+            {
+                if (element.Key == 1311341)
+                {
+                    Console.WriteLine();
+                }
+                BinaryPrimitives.WriteInt64BigEndian(keyBuffer, element.Key);
+                if (element.Value == null)
+                {
+                    tx.Put(db, keyBuffer, ReadOnlySpan<byte>.Empty);
+                }
+                else
+                {
+                    var buffer = originalBuffer;
+                    BinSerialize.WriteUShort(ref buffer, (ushort)element.Value.Members.Length);
+                    foreach (var member in element.Value.Members)
+                    {
+                        BinSerialize.WriteLong(ref buffer, member.Id);
+                        BinSerialize.WriteString(ref buffer, member.Role);
+                        BinSerialize.WriteByte(ref buffer, (byte)member.Type);
+                    }
+                    WriteTags(ref buffer, element.Value.Tags);
+                    tx.Put(db, keyBuffer, originalBuffer.Slice(0, originalBuffer.Length - buffer.Length));
                 }
             }
         }
 
         public bool TryGetElement(string dbName, long id, out OsmGeo? element)
         {
-            using var tx = dbEnv.BeginTransaction();
-            var db = OpenDb(tx, dbName);
-            Span<byte> keyBuffer = stackalloc byte[8];
-            var buffer = new byte[8 * 1024];
-            BinaryPrimitives.WriteInt64LittleEndian(keyBuffer, id);
-
-            var read = tx.Get(db, keyBuffer);
-            if (read.resultCode == MDBResultCode.Success)
-            {
-                var memory = new MemoryStream(read.value.CopyToNewArray());
-                if (memory.Length == 0)
-                {
-                    element = null;
-                    return true;
-                }
-                element = BinarySerializer.ReadOsmGeo(memory, buffer);
-                return true;
-            }
-            element = null;
-            return false;
+            throw new NotImplementedException();
         }
 
         public bool TryGetNode(long id, out Node? nodeFromDb)
         {
-            var result = TryGetElement("Nodes", id, out var element);
-            nodeFromDb = element as Node;
-            return result;
+            if (transaction is not LightningTransaction tx)
+            {
+                throw new InvalidOperationException("Transaction not started!");
+            }
+            var db = OpenDb(tx, "Nodes");
+            Span<byte> keyBuffer = stackalloc byte[8];
+            BinaryPrimitives.WriteInt64BigEndian(keyBuffer, id);
+
+            var read = tx.Get(db, keyBuffer);
+            if (read.resultCode == MDBResultCode.Success)
+            {
+                var buffer = read.value.AsSpan();
+                if (buffer.Length == 0)
+                {
+                    nodeFromDb = null;
+                    return true;
+                }
+                var lat = BinSerialize.ReadDouble(ref buffer);
+                var lon = BinSerialize.ReadDouble(ref buffer);
+                var tags = ReadTags(ref buffer);
+                nodeFromDb = new Node(id, lat, lon, tags);
+                return true;
+            }
+            nodeFromDb = null;
+            return false;
         }
+
         public bool TryGetWay(long id, out Way? wayFromDb)
         {
-            var result = TryGetElement("Ways", id, out var element);
-            wayFromDb = element as Way;
-            return result;
+            if (transaction is not LightningTransaction tx)
+            {
+                throw new InvalidOperationException("Transaction not started!");
+            }
+            var db = OpenDb(tx, "Ways");
+            Span<byte> keyBuffer = stackalloc byte[8];
+            BinaryPrimitives.WriteInt64BigEndian(keyBuffer, id);
+
+            var read = tx.Get(db, keyBuffer);
+            if (read.resultCode == MDBResultCode.Success)
+            {
+                var buffer = read.value.AsSpan();
+                if (buffer.Length == 0)
+                {
+                    wayFromDb = null;
+                    return true;
+                }
+                int numberOfNodes = BinSerialize.ReadUShort(ref buffer);
+                var nodes = new long[numberOfNodes];
+                for (int i = 0; i < numberOfNodes; i++)
+                {
+                    nodes[i] = BinSerialize.ReadLong(ref buffer);
+                }
+                var tags = ReadTags(ref buffer);
+                wayFromDb = new Way(id, nodes, tags);
+                return true;
+            }
+            wayFromDb = null;
+            return false;
         }
         public bool TryGetRelation(long id, out Relation? relationFromDb)
         {
-            var result = TryGetElement("Relations", id, out var element);
-            relationFromDb = element as Relation;
-            return result;
+            if (transaction is not LightningTransaction tx)
+            {
+                throw new InvalidOperationException("Transaction not started!");
+            }
+            var db = OpenDb(tx, "Relations");
+            Span<byte> keyBuffer = stackalloc byte[8];
+            BinaryPrimitives.WriteInt64BigEndian(keyBuffer, id);
+
+            var read = tx.Get(db, keyBuffer);
+            if (read.resultCode == MDBResultCode.Success)
+            {
+                var buffer = read.value.AsSpan();
+                if (buffer.Length == 0)
+                {
+                    relationFromDb = null;
+                    return true;
+                }
+                int numberOfMembers = BinSerialize.ReadUShort(ref buffer);
+                var members = new RelationMember[numberOfMembers];
+                for (int i = 0; i < numberOfMembers; i++)
+                {
+                    var memberId = BinSerialize.ReadLong(ref buffer);
+                    var role = BinSerialize.ReadString(ref buffer);
+                    var type = (OsmGeoType)BinSerialize.ReadByte(ref buffer);
+                    members[i] = new RelationMember(memberId, role, type);
+                }
+                var tags = ReadTags(ref buffer);
+                relationFromDb = new Relation(id, members, tags);
+                return true;
+            }
+            relationFromDb = null;
+            return false;
         }
 
         public void Dispose()

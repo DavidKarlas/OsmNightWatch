@@ -1,5 +1,6 @@
 ﻿using OsmNightWatch;
 using OsmNightWatch.Analyzers;
+using OsmNightWatch.Analyzers.AdminCountPerCountry;
 using OsmNightWatch.Lib;
 using OsmNightWatch.PbfParsing;
 using OsmSharp.Changesets;
@@ -12,20 +13,34 @@ using System.Xml.Serialization;
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
 
-var path = @"C:\COSMOS\planet-230403.osm.pbf";
-var index = PbfIndexBuilder.BuildIndex(path);
-var pbfDb = new PbfDatabase(index);
 
-var analyzers = new IOsmAnalyzer[] {
-    new OsmNightWatch.Analyzers.BrokenCoastline.BrokenCoastlineAnalyzer()
-};
+var path = @"C:\COSMOS\planet-230403.osm.pbf";
 
 using var database = new KeyValueDatabase(Path.GetFullPath("NightWatchDatabase"));
+database.BeginTransaction();
+
+var index = PbfIndexBuilder.BuildIndex(path);
+var pbfDb = new PbfDatabase(index);
+var analyzers = new IOsmAnalyzer[] {
+    new AdminCountPerCountryAnalyzer(database)
+};
+
 var dbWithChanges = new OsmDatabaseWithReplicationData(pbfDb, database);
 var currentTimeStamp = database.GetTimestamp();
 if (currentTimeStamp == null)
 {
+    foreach (var analyzer in analyzers)
+    {
+        var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings).ToArray();
+        Console.WriteLine(analyzer.ProcessPbf(relevantThings, dbWithChanges).Count());
+    }
+    dbWithChanges.StoreCache();
+    database.CommitTransaction();
     currentTimeStamp = Utils.GetLatestTimestampFromPbf(index);
+}
+else
+{
+    database.AbortTransaction();
 }
 IReplicationDiffEnumerator enumerator = new CatchupReplicationDiffEnumerator((DateTime)currentTimeStamp);
 IssuesData? oldIssuesData = await IssuesUploader.DownloadAsync();
@@ -43,12 +58,13 @@ retry:
 
         database.BeginTransaction();
 
+        var mergedChangeset = new MergedChangeset(changeset);
         Log($"Applying changeset to database...");
-        dbWithChanges.ApplyChangeset(changeset);
+        dbWithChanges.ApplyChangeset(mergedChangeset);
 
         database.SetTimestamp(replicationState.EndTimestamp);
         Log($"Analyzing changeset...");
-        var newIssuesData = Analyze(analyzers, changeset, dbWithChanges, replicationState);
+        var newIssuesData = Analyze(analyzers, mergedChangeset, dbWithChanges, replicationState);
 
         newIssuesData.SetTimestampsAndLastKnownGood(oldIssuesData);
         oldIssuesData = newIssuesData;
@@ -62,7 +78,7 @@ retry:
     }
 }
 
-void Log(string message)
+static void Log(string message)
 {
     Console.WriteLine(DateTime.Now.ToString("s") + ": " + message);
 }
@@ -169,7 +185,7 @@ static async Task UploadIssues(ReplicationState replicationState, IssuesData new
     }
 }
 
-static IssuesData Analyze(IOsmAnalyzer[] analyzers, OsmChange changeset, OsmDatabaseWithReplicationData dbWithChanges, ReplicationState replicationState)
+static IssuesData Analyze(IOsmAnalyzer[] analyzers, MergedChangeset mergedChangeset, OsmDatabaseWithReplicationData dbWithChanges, ReplicationState replicationState)
 {
     var newIssuesData = new IssuesData() {
         DateTime = replicationState.EndTimestamp,
@@ -178,13 +194,10 @@ static IssuesData Analyze(IOsmAnalyzer[] analyzers, OsmChange changeset, OsmData
 
     foreach (var analyzer in analyzers)
     {
-        //Console.WriteLine($"{DateTime.Now} Starting filtering relevant things...");
-        //var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings);
-        ////Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevantThings.Length}.");
-        //Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}...");
-        //var issues = analyzer.GetIssues(relevantThings, dbWithChanges).ToList();
-        //Console.WriteLine($"{DateTime.Now} Found {issues.Count} issues.");
-        //newIssuesData.AllIssues.AddRange(issues);
+        Log($"Starting {analyzer.AnalyzerName}...");
+        var issues = analyzer.ProcessChangeset(mergedChangeset, dbWithChanges).ToList();
+        Log($"Found {issues.Count} issues.");
+        newIssuesData.AllIssues.AddRange(issues);
     }
 
     return newIssuesData;

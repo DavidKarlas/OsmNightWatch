@@ -1,5 +1,4 @@
 ﻿using OsmSharp.Tags;
-using OsmSharp;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Text;
@@ -14,8 +13,7 @@ namespace OsmNightWatch.PbfParsing
             var indexFilters = new IndexedTagFilters(filters.Where(f => f.GeoType == OsmGeoType.Relation).SelectMany(f => f.Tags));
             var relationsBag = new ConcurrentBag<Relation>();
             ParallelParse(index.PbfPath, index.GetAllRelationFileOffsets().Select(o => (o, (HashSet<long>?)null)).ToList(),
-                (HashSet<long>? relevantIds, byte[] readBuffer, object? state) =>
-                {
+                (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
                     ParseRelations(relationsBag, null, indexFilters, readBuffer);
                 });
             return relationsBag.ToArray();
@@ -26,7 +24,7 @@ namespace OsmNightWatch.PbfParsing
             var relationsBag = new ConcurrentBag<Relation>(relations);
             while (true)
             {
-                var dictionaryOfLoadedRelations = relationsBag.ToDictionary(r => (long)r.Id!, r => r);
+                var dictionaryOfLoadedRelations = relationsBag.ToDictionary(r => r.Id!, r => r);
                 var unloadedChildren = new HashSet<long>();
                 foreach (var relation in dictionaryOfLoadedRelations.Values)
                 {
@@ -44,23 +42,23 @@ namespace OsmNightWatch.PbfParsing
                     return dictionaryOfLoadedRelations.Values;
                 }
                 ParallelParse(index.PbfPath, index.CalculateFileOffsets(unloadedChildren, OsmGeoType.Relation),
-                    (HashSet<long>? relevantIds, byte[] readBuffer, object? state) =>
-                    {
+                    (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
                         ParseRelations(relationsBag, relevantIds, null, readBuffer);
                     });
             }
         }
 
-        public static Dictionary<long, Relation> LoadRelations(HashSet<long> relationsToLoad, PbfIndex index)
+        public static IReadOnlyCollection<Relation> LoadRelations(HashSet<long>? relationsToLoad, PbfIndex index)
         {
+            if (relationsToLoad == null || relationsToLoad.Count == 0)
+                return Array.Empty<Relation>();
             var fileOffsets = index.CalculateFileOffsets(relationsToLoad, OsmGeoType.Relation);
             var relationsBag = new ConcurrentBag<Relation>();
-            ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer, object? state) =>
-            {
+            ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
                 ParseRelations(relationsBag, relevantIds, null, readBuffer);
             });
 
-            return relationsBag.ToDictionary(r => (long)r.Id!, r => r);
+            return relationsBag;
         }
 
         public static void ParseRelations(ConcurrentBag<Relation> relationsBag, HashSet<long>? relationsToLoad, IndexedTagFilters? tagFilters, byte[] readBuffer)
@@ -95,7 +93,8 @@ namespace OsmNightWatch.PbfParsing
                 {
                     if (item.TagValues.Count == 0)
                     {
-                        stringIdFilters.Add(utf8ToIdMappings[item.TagKey], null);
+                        if (utf8ToIdMappings.TryGetValue(item.TagKey, out var val))
+                            stringIdFilters.Add(val, null);
                     }
                     else
                     {
@@ -173,7 +172,7 @@ namespace OsmNightWatch.PbfParsing
                                 {
                                     int currentTagKeyId = BinSerialize.ReadPackedInt(ref uncompressedSpan);
                                     tagKeys.Add(currentTagKeyId);
-                                    
+
                                     if (!doTagFiltering)
                                         continue;
 
@@ -200,13 +199,13 @@ namespace OsmNightWatch.PbfParsing
                                 {
                                     int currentTagValueId = BinSerialize.ReadPackedInt(ref uncompressedSpan);
                                     tagValues.Add(currentTagValueId);
-                                    
+
                                     if (!doTagFiltering)
                                         continue;
 
                                     if (expectedValues.TryGetValue(tagValues.Count, out var acceptableValues))
                                     {
-                                        if (acceptableValues.Count == 0 || acceptableValues.Contains(currentTagValueId))
+                                        if (acceptableValues == null || acceptableValues.Contains(currentTagValueId))
                                         {
                                             matchedValues++;
                                         }
@@ -258,7 +257,7 @@ namespace OsmNightWatch.PbfParsing
                                 throw new Exception();
                         }
                     }
-                    if(doTagFiltering && tagKeys.Count == 0)
+                    if (doTagFiltering && tagKeys.Count == 0)
                     {
                         goto nextIteration;
                     }
@@ -272,12 +271,7 @@ namespace OsmNightWatch.PbfParsing
                     {
                         tags.Add(new Tag(Encoding.UTF8.GetString(stringSpans[tagKeys[i]].Span), Encoding.UTF8.GetString(stringSpans[tagValues[i]].Span)));
                     }
-                    relationsBag.Add(new Relation()
-                    {
-                        Id = (long)relationId,
-                        Members = members,
-                        Tags = tags
-                    });
+                    relationsBag.Add(new Relation(relationId, members, tags));
                 }
             }
             ArrayPool<byte>.Shared.Return(uncompressbuffer);

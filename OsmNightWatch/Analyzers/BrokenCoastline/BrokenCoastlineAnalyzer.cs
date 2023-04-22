@@ -1,5 +1,5 @@
 ﻿using OsmNightWatch.Lib;
-using OsmSharp;
+using OsmNightWatch.PbfParsing;
 
 namespace OsmNightWatch.Analyzers.BrokenCoastline {
     public class BrokenCoastlineAnalyzer : IOsmAnalyzer {
@@ -22,7 +22,8 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline {
             }
         };
 
-        public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource) {
+        public IEnumerable<IssueData> ProcessPbf(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource)
+        {
             //Uncomment line below when we decide we need Nodes information...
             //Utils.BatchLoad(relevantThings, newOsmSource, true, true);
             var (issuesNodes, issuesWays) = new CoastlineValidationTest().Visit(relevantThings, newOsmSource);
@@ -33,7 +34,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline {
                     yield return new IssueData() {
                         IssueType = AnalyzerName,
                         OsmType = "W",
-                        OsmId = way.Id!.Value,
+                        OsmId = way.Id,
                         Details = IssueDetails[detailsNum]
                     };
                 }
@@ -51,6 +52,11 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline {
                     };
                 }
             }
+        }
+
+        public IEnumerable<IssueData> ProcessChangeset(MergedChangeset changeSet, IOsmGeoSource newOsmSource)
+        {
+            throw new NotImplementedException();
         }
     }
 }

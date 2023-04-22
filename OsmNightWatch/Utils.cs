@@ -1,5 +1,4 @@
 ﻿using OsmNightWatch.PbfParsing;
-using OsmSharp;
 using System.Collections.Concurrent;
 
 namespace OsmNightWatch
@@ -45,7 +44,7 @@ namespace OsmNightWatch
             Dictionary<long, Relation> dictionaryOfLoadedRelations;
             while (true)
             {
-                dictionaryOfLoadedRelations = relationsBag.ToDictionary(r => (long)r.Id!, r => r);
+                dictionaryOfLoadedRelations = relationsBag.ToDictionary(r => r.Id!, r => r);
                 var unloadedChildren = new HashSet<long>();
                 foreach (var relation in dictionaryOfLoadedRelations.Values)
                 {

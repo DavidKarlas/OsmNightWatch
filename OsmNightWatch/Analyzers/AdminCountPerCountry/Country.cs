@@ -1,11 +1,7 @@
 ﻿using NetTopologySuite.Geometries.Prepared;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Text.Json.Serialization;
 
-namespace OsmNightWatch.Analyzers.CountriesTracker
+namespace OsmNightWatch.Analyzers.AdminCountPerCountry
 {
     public class Country
     {
@@ -14,6 +10,7 @@ namespace OsmNightWatch.Analyzers.CountriesTracker
         public string Iso3 { get; set; }
         public string Iso2 { get; set; }
         public Dictionary<string, List<long>> Admins { get; set; } = new();
+        [JsonIgnore]
         public PreparedPolygon Polygon { get; set; }
     }
 

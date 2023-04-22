@@ -1,11 +1,12 @@
-﻿using OsmSharp;
+﻿using OsmNightWatch.PbfParsing;
 
-namespace OsmNightWatch.Analyzers.AdminCountPerAdmin2;
+namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 
 class ProcessingAdmin
 {
     public Relation Admin;
     public HashSet<long> Countries = new HashSet<long>();
+    public List<Way> Ways = new List<Way>();
 
     public ProcessingAdmin(Relation relation)
     {

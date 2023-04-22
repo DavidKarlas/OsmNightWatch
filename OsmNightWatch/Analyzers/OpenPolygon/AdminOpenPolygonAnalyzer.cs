@@ -1,20 +1,15 @@
 ﻿using OsmNightWatch.Lib;
-using OsmSharp;
-using OsmSharp.Changesets;
-using OsmSharp.Db;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
+using OsmNightWatch.PbfParsing;
 using System.Globalization;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace OsmNightWatch.Analyzers.OpenPolygon {
-    public class AdminOpenPolygonAnalyzer : IOsmAnalyzer {
+namespace OsmNightWatch.Analyzers.OpenPolygon
+{
+    public class AdminOpenPolygonAnalyzer : IOsmAnalyzer
+    {
         public string AnalyzerName => "OpenAdminPolygon";
 
-        private bool? IsRelationValid(Relation relation, IOsmGeoSource osmSource, out bool fineWhenIgnoringOuter, out int adminLevel, out string friendlyName) {
+        private bool? IsRelationValid(Relation relation, IOsmGeoSource osmSource, out bool fineWhenIgnoringOuter, out int adminLevel, out string friendlyName)
+        {
             fineWhenIgnoringOuter = false;
             adminLevel = -1;
             if (!relation.Tags.TryGetValue("name:en", out friendlyName))
@@ -58,33 +53,9 @@ namespace OsmNightWatch.Analyzers.OpenPolygon {
                 }, true,false)
             }
         };
-
-        public IEnumerable<IssueData> GetIssues(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource osmSource) {
-            Utils.BatchLoad(relevantThings, osmSource, true, false);
-
-            foreach (var relevantThing in relevantThings)
-            {
-                if (relevantThing is Relation relation)
-                {
-                    if (IsRelationValid(relation, osmSource, out var fineWhenIgnoringMemberType, out var adminLevel, out var friendlyName) ?? true)
-                        continue;
-                    var issueType = AnalyzerName;
-                    if (adminLevel > 6)
-                    {
-                        issueType += adminLevel;
-                    }
-                    yield return new IssueData() {
-                        IssueType = issueType,
-                        OsmType = "R",
-                        FriendlyName = friendlyName,
-                        OsmId = relation.Id!.Value,
-                        Details = fineWhenIgnoringMemberType ? "Member missing 'inner' or 'outer' member role." : "Disconnected relation."
-                    };
-                }
-            }
-        }
-
-        public static bool IsValid(Relation r, IOsmGeoSource db, bool ignoreMemberRole) {
+        
+        public static bool IsValid(Relation r, IOsmGeoSource db, bool ignoreMemberRole)
+        {
             var hashSet = new HashSet<long>();
 
             foreach (var way in r.Members.Where(m => m.Type == OsmGeoType.Way && (ignoreMemberRole ? true : (m.Role == "inner" || m.Role == "outer"))).Select(m => db.GetWay(m.Id)))
@@ -108,6 +79,37 @@ namespace OsmNightWatch.Analyzers.OpenPolygon {
                 return false;
             }
             return true;
+        }
+
+        public IEnumerable<IssueData> ProcessPbf(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource)
+        {
+            Utils.BatchLoad(relevantThings, newOsmSource, true, false);
+
+            foreach (var relevantThing in relevantThings)
+            {
+                if (relevantThing is Relation relation)
+                {
+                    if (IsRelationValid(relation, newOsmSource, out var fineWhenIgnoringMemberType, out var adminLevel, out var friendlyName) ?? true)
+                        continue;
+                    var issueType = AnalyzerName;
+                    if (adminLevel > 6)
+                    {
+                        issueType += adminLevel;
+                    }
+                    yield return new IssueData() {
+                        IssueType = issueType,
+                        OsmType = "R",
+                        FriendlyName = friendlyName,
+                        OsmId = relation.Id,
+                        Details = fineWhenIgnoringMemberType ? "Member missing 'inner' or 'outer' member role." : "Disconnected relation."
+                    };
+                }
+            }
+        }
+
+        public IEnumerable<IssueData> ProcessChangeset(MergedChangeset changeSet, IOsmGeoSource newOsmSource)
+        {
+            throw new NotImplementedException();
         }
     }
 }

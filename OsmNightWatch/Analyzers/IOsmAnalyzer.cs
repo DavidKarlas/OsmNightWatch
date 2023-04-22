@@ -1,7 +1,5 @@
 ﻿using OsmNightWatch.Lib;
-using OsmSharp;
-using OsmSharp.Changesets;
-using OsmSharp.Db;
+using OsmNightWatch.PbfParsing;
 
 namespace OsmNightWatch.Analyzers
 {
@@ -11,6 +9,8 @@ namespace OsmNightWatch.Analyzers
 
         FilterSettings FilterSettings { get; }
 
-        Func<OsmGeo, IssueData?> GetValidator();
+        IEnumerable<IssueData> ProcessPbf(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource);
+
+        IEnumerable<IssueData> ProcessChangeset(MergedChangeset changeSet, IOsmGeoSource newOsmSource);
     }
 }

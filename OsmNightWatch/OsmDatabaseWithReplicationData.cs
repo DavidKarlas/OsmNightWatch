@@ -1,13 +1,10 @@
-﻿using FASTER.core;
-using OsmSharp;
-using OsmSharp.Changesets;
-using OsmSharp.Db;
+﻿using OsmNightWatch.PbfParsing;
 
 namespace OsmNightWatch
 {
-    public class OsmDatabaseWithReplicationData : IOsmGeoSource
+    public class OsmDatabaseWithReplicationData : IOsmGeoFilterableSource
     {
-        private readonly IOsmGeoSource baseSource;
+        private readonly IOsmGeoFilterableSource baseSource;
 
         private Dictionary<long, Relation?> changesetRelations = new();
         private Dictionary<long, Way?> changesetWays = new();
@@ -15,57 +12,29 @@ namespace OsmNightWatch
 
         private KeyValueDatabase keyValueDatabase;
 
-        public OsmDatabaseWithReplicationData(IOsmGeoSource baseSource, KeyValueDatabase keyValueDatabase)
+        public OsmDatabaseWithReplicationData(IOsmGeoFilterableSource baseSource, KeyValueDatabase keyValueDatabase)
         {
             this.baseSource = baseSource;
             this.keyValueDatabase = keyValueDatabase;
         }
 
-        public void ApplyChangeset(OsmChange changeset)
+        public void ApplyChangeset(MergedChangeset changeset)
         {
             changesetNodes.Clear();
             changesetWays.Clear();
             changesetRelations.Clear();
 
-            foreach (var change in changeset.Create)
+            foreach (var change in changeset.Nodes)
             {
-                Put(change);
+                changesetNodes[change.Key] = change.Value;
             }
-            foreach (var change in changeset.Modify)
+            foreach (var change in changeset.Ways)
             {
-                Put(change);
+                changesetWays[change.Key] = change.Value;
             }
-            foreach (var change in changeset.Delete)
+            foreach (var change in changeset.Relations)
             {
-                switch (change.Type)
-                {
-                    case OsmGeoType.Node:
-                        if (change.Id is long idNode)
-                        {
-                            if (changesetNodes.TryGetValue(idNode, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
-                                continue;
-                            changesetNodes[idNode] = null;
-                        }
-                        break;
-                    case OsmGeoType.Way:
-                        if (change.Id is long idWay)
-                        {
-                            if (changesetWays.TryGetValue(idWay, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
-                                continue;
-                            changesetWays[idWay] = null;
-                        }
-                        break;
-                    case OsmGeoType.Relation:
-                        if (change.Id is long idRelation)
-                        {
-                            if (changesetRelations.TryGetValue(idRelation, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
-                                continue;
-                            changesetRelations[idRelation] = null;
-                        }
-                        break;
-                    default:
-                        throw new NotImplementedException();
-                }
+                changesetRelations[change.Key] = change.Value;
             }
 
             keyValueDatabase.UpdateNodes(changesetNodes);
@@ -73,18 +42,18 @@ namespace OsmNightWatch
             keyValueDatabase.UpdateRelations(changesetRelations);
         }
 
-        private void Put(OsmGeo element)
+        public void Put(OsmGeo element)
         {
             switch (element.Type)
             {
                 case OsmGeoType.Node:
-                    changesetNodes[(long)element.Id!] = (Node)element;
+                    changesetNodes[element.Id] = (Node)element;
                     break;
                 case OsmGeoType.Way:
-                    changesetWays[(long)element.Id!] = (Way)element;
+                    changesetWays[element.Id] = (Way)element;
                     break;
                 case OsmGeoType.Relation:
-                    changesetRelations[(long)element.Id!] = (Relation)element;
+                    changesetRelations[element.Id] = (Relation)element;
                     break;
             }
         }
@@ -125,6 +94,56 @@ namespace OsmNightWatch
                     break;
             }
             return baseSource.Get(type, id);
+        }
+
+        public (IReadOnlyCollection<Node> nodes, IReadOnlyCollection<Way> ways, IReadOnlyCollection<Relation> relations) BatchLoad(HashSet<long> nodeIds, HashSet<long> wayIds, HashSet<long> relationIds)
+        {
+            var (nodes, ways, relations) = baseSource.BatchLoad(nodeIds, wayIds, relationIds);
+            foreach (var node in nodes)
+            {
+                Put(node);
+            }
+            foreach (var way in ways)
+            {
+                Put(way);
+            }
+            foreach (var relation in relations)
+            {
+                Put(relation);
+            }
+
+            return (nodes, ways, relations);
+        }
+
+        public void StoreCache()
+        {
+            keyValueDatabase.UpdateNodes(changesetNodes, true);
+            keyValueDatabase.UpdateWays(changesetWays, true);
+            keyValueDatabase.UpdateRelations(changesetRelations, true);
+        }
+
+        public Node GetNode(long id)
+        {
+            return Get(OsmGeoType.Node, id) as Node;
+        }
+
+        public Way GetWay(long id)
+        {
+            return Get(OsmGeoType.Way, id) as Way;
+        }
+
+        public Relation GetRelation(long id)
+        {
+            return Get(OsmGeoType.Relation, id) as Relation;
+        }
+
+        public IEnumerable<OsmGeo> Filter(FilterSettings filterSettings)
+        {
+            foreach (var element in baseSource.Filter(filterSettings))
+            {
+                Put(element);
+                yield return element;
+            }
         }
     }
 }

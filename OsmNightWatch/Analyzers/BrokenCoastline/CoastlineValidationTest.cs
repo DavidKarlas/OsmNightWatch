@@ -1,7 +1,5 @@
-﻿using OsmSharp;
-using OsmSharp.Db;
-using System;
-using System.Collections.Generic;
+﻿
+using OsmNightWatch.PbfParsing;
 
 namespace OsmNightWatch.Analyzers.BrokenCoastline
 {

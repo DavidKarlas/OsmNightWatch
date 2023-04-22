@@ -91,9 +91,9 @@ namespace OsmNightWatch
             {
                 ulong b = ReadByte(ref span);
                 if ((b & 0x80) == 0)
-                    return val | (ulong)b << (7 * n);
+                    return val | b << (7 * n);
 
-                val |= (ulong)(b & 0x7F) << (7 * n);
+                val |= (b & 0x7F) << (7 * n);
             }
 
             throw new Exception("Got larger VarInt than 64 bit unsigned");
