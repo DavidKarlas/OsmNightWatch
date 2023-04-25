@@ -1,4 +1,8 @@
 ﻿using LightningDB;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.Geometries.Prepared;
+using NetTopologySuite.Index.Strtree;
+using Npgsql;
 using OsmNightWatch.Analyzers.AdminCountPerCountry;
 using OsmNightWatch.PbfParsing;
 using OsmSharp.IO.Binary;
@@ -6,6 +10,7 @@ using OsmSharp.Tags;
 using ProtoBuf.WellKnownTypes;
 using System;
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using System.Xml.Linq;
@@ -16,6 +21,7 @@ namespace OsmNightWatch
     {
         private const int TimestampDbKey = 1;
         private readonly LightningEnvironment dbEnv;
+        NpgsqlDataSource dataSource;
         private LightningTransaction? transaction;
         private Dictionary<string, LightningDatabase> databases = new();
 
@@ -31,7 +37,75 @@ namespace OsmNightWatch
         public KeyValueDatabase(string storePath)
         {
             dbEnv = CreateEnv(storePath);
+            var dataSourceBuilder = new NpgsqlDataSourceBuilder("Host=localhost;Username=postgres;Password=a;Database=postgis_33_sample");
+            dataSourceBuilder.UseNetTopologySuite();
+            dataSource = dataSourceBuilder.Build();
         }
+
+        public async Task Initialize()
+        {
+            using (var comm = dataSource.CreateCommand("CREATE TABLE IF NOT EXISTS ExpectedAdmins (CountryRelationId int, AdminLevel int, ExpectedAdmin int)"))
+                await comm.ExecuteNonQueryAsync();
+            using (var comm = dataSource.CreateCommand("CREATE INDEX IF NOT EXISTS ExpectedAdmins_CountryAndAdminLevel_index  ON ExpectedAdmins USING btree (CountryRelationId, AdminLevel);"))
+                await comm.ExecuteNonQueryAsync();
+
+            using (var comm = dataSource.CreateCommand("CREATE TABLE IF NOT EXISTS Admins (Id int PRIMARY KEY, AdminLevel int, geom GEOMETRY)"))
+                await comm.ExecuteNonQueryAsync();
+            using (var comm = dataSource.CreateCommand("CREATE INDEX IF NOT EXISTS admin_geom_index  ON admins  USING GIST (geom);"))
+                await comm.ExecuteNonQueryAsync();
+            //using (var comm = dataSource.CreateCommand("CREATE INDEX admin_level_index  ON admins  USING HASH (AdminLevel);"))
+            //    await comm.ExecuteNonQueryAsync();
+        }
+
+        public async Task UpsertCountry(Country country)
+        {
+            using (var comm = dataSource.CreateCommand("INSERT INTO Countries (Id, geom) VALUES (@id, @geom) ON CONFLICT (Id) DO UPDATE SET geom = @geom"))
+            {
+                comm.Parameters.AddWithValue("id", country.RelationId);
+                comm.Parameters.AddWithValue("geom", country.Polygon.Geometry);
+                await comm.ExecuteNonQueryAsync();
+            }
+        }
+
+        public async Task DeleteAdmin(long id)
+        {
+            using (var comm = dataSource.CreateCommand("DELETE FROM Admins WHERE Id = @id"))
+            {
+                comm.Parameters.AddWithValue("id", id);
+                await comm.ExecuteNonQueryAsync();
+            }
+        }
+
+        public async Task UpsertAdmin(long id, int adminLevel, Geometry polygon)
+        {
+            using (var comm = dataSource.CreateCommand("INSERT INTO Admins (Id, AdminLevel, geom) VALUES (@id, @adminLevel, @geom) ON CONFLICT (Id) DO UPDATE SET geom = @geom, AdminLevel = @adminLevel"))
+            {
+                comm.Parameters.AddWithValue("id", id);
+                comm.Parameters.AddWithValue("adminLevel", adminLevel);
+                comm.Parameters.AddWithValue("geom", polygon);
+                await comm.ExecuteNonQueryAsync();
+            }
+        }
+
+        //public void UpsertExpectedAdmins(long relationId, int adminLevel, List<long> expectedAdmins)
+        //{
+        //    using (var comm = dataSource.CreateCommand("DELETE FROM ExpectedAdmins WHERE CountryRelationId = @relationId AND AdminLevel = @adminLevel"))
+        //    {
+        //        comm.Parameters.AddWithValue("relationId", relationId);
+        //        comm.Parameters.AddWithValue("adminLevel", adminLevel);
+        //        comm.ExecuteNonQuery();
+        //    }
+        //    foreach (var expectedAdmin in expectedAdmins)
+        //    {
+        //        using (var comm = dataSource.CreateCommand("INSERT INTO ExpectedAdmins (CountryRelationId, AdminLevel, ExpectedAdmin) VALUES (@relationId, @adminLevel, @expectedAdmin)"))
+        //        {
+        //            comm.Parameters.AddWithValue("relationId", relationId);
+        //            comm.Parameters.AddWithValue("adminLevel", adminLevel);
+        //            comm.Parameters.AddWithValue("expectedAdmin", expectedAdmin);
+        //            comm.ExecuteNonQuery();
+        //        }
+        //    }
+        //}
 
         public void BeginTransaction()
         {
@@ -127,6 +201,18 @@ namespace OsmNightWatch
                     var buffer = originalBuffer;
                     BinSerialize.WriteDouble(ref buffer, element.Value.Latitude);
                     BinSerialize.WriteDouble(ref buffer, element.Value.Longitude);
+                    if (element.Value.ParentWays == null)
+                    {
+                        BinSerialize.WriteByte(ref buffer, 0);
+                    }
+                    else
+                    {
+                        BinSerialize.WriteUShort(ref buffer, (byte)element.Value.ParentWays.Count);
+                        foreach (var item in element.Value.ParentWays)
+                        {
+                            BinSerialize.WriteUInt(ref buffer, item);
+                        }
+                    }
                     WriteTags(ref buffer, element.Value.Tags);
                     buffer = originalBuffer.Slice(0, originalBuffer.Length - buffer.Length);
                     if (initial)
@@ -143,29 +229,16 @@ namespace OsmNightWatch
 
         public void WriteRelationChangesTracker(int id, RelationChangesTracker tracker)
         {
-            if (transaction is not LightningTransaction tx)
-            {
-                throw new InvalidOperationException("Transaction not started!");
-            }
-            var db = OpenDb(tx, "RelationChangesTracker");
             var fileName = nameof(RelationChangesTracker) + "_" + id + ".db";
-            var result = tx.Put(db, BitConverter.GetBytes(1000 + id), Encoding.UTF8.GetBytes(fileName));
-
-            File.WriteAllBytes(fileName, tracker.Serialize());
+            tracker.Serialize(fileName);
         }
 
         public RelationChangesTracker ReadRelationChangesTracker(int id)
         {
-            if (transaction is not LightningTransaction tx)
+            var fileName = nameof(RelationChangesTracker) + "_" + id + ".db";
+            if (File.Exists(fileName))
             {
-                throw new InvalidOperationException("Transaction not started!");
-            }
-            var db = OpenDb(tx, "RelationChangesTracker");
-            var result = tx.Get(db, Encoding.UTF8.GetBytes(nameof(RelationChangesTracker) + id));
-            if (result.resultCode == MDBResultCode.Success)
-            {
-                var span = result.value.AsSpan();
-                return new RelationChangesTracker(Encoding.UTF8.GetString(span));
+                return new RelationChangesTracker(fileName);
             }
             return new RelationChangesTracker(null);
         }
@@ -223,6 +296,18 @@ namespace OsmNightWatch
                     {
                         BinSerialize.WriteLong(ref buffer, nodeId);
                     }
+                    if (element.Value.ParentRelations == null)
+                    {
+                        BinSerialize.WriteByte(ref buffer, 0);
+                    }
+                    else
+                    {
+                        BinSerialize.WriteUShort(ref buffer, (byte)element.Value.ParentRelations.Count);
+                        foreach (var item in element.Value.ParentRelations)
+                        {
+                            BinSerialize.WriteUInt(ref buffer, item);
+                        }
+                    }
                     WriteTags(ref buffer, element.Value.Tags);
                     tx.Put(db, keyBuffer, originalBuffer.Slice(0, originalBuffer.Length - buffer.Length));
                 }
@@ -241,10 +326,6 @@ namespace OsmNightWatch
             Span<byte> originalBuffer = stackalloc byte[1024 * 1024];
             foreach (var element in changesetRelations)
             {
-                if (element.Key == 1311341)
-                {
-                    Console.WriteLine();
-                }
                 BinaryPrimitives.WriteInt64BigEndian(keyBuffer, element.Key);
                 if (element.Value == null)
                 {
@@ -264,11 +345,6 @@ namespace OsmNightWatch
                     tx.Put(db, keyBuffer, originalBuffer.Slice(0, originalBuffer.Length - buffer.Length));
                 }
             }
-        }
-
-        public bool TryGetElement(string dbName, long id, out OsmGeo? element)
-        {
-            throw new NotImplementedException();
         }
 
         public bool TryGetNode(long id, out Node? nodeFromDb)
@@ -292,8 +368,20 @@ namespace OsmNightWatch
                 }
                 var lat = BinSerialize.ReadDouble(ref buffer);
                 var lon = BinSerialize.ReadDouble(ref buffer);
+                var parentWaysCount = BinSerialize.ReadByte(ref buffer);
+                HashSet<uint>? parentWays = null;
+                if (parentWaysCount > 0)
+                {
+                    parentWays = new HashSet<uint>();
+                    for (int i = 0; i < parentWaysCount; i++)
+                    {
+                        parentWays.Add(BinSerialize.ReadUInt(ref buffer));
+                    }
+                }
                 var tags = ReadTags(ref buffer);
-                nodeFromDb = new Node(id, lat, lon, tags);
+                nodeFromDb = new Node(id, lat, lon, tags) {
+                    ParentWays = parentWays
+                };
                 return true;
             }
             nodeFromDb = null;
@@ -325,8 +413,20 @@ namespace OsmNightWatch
                 {
                     nodes[i] = BinSerialize.ReadLong(ref buffer);
                 }
+                var parentRelationsCount = BinSerialize.ReadByte(ref buffer);
+                HashSet<uint>? parentRelations = null;
+                if (parentRelationsCount > 0)
+                {
+                    parentRelations = new HashSet<uint>();
+                    for (int i = 0; i < parentRelationsCount; i++)
+                    {
+                        parentRelations.Add(BinSerialize.ReadUInt(ref buffer));
+                    }
+                }
                 var tags = ReadTags(ref buffer);
-                wayFromDb = new Way(id, nodes, tags);
+                wayFromDb = new Way(id, nodes, tags) {
+                    ParentRelations = parentRelations
+                };
                 return true;
             }
             wayFromDb = null;
@@ -371,6 +471,120 @@ namespace OsmNightWatch
         public void Dispose()
         {
             dbEnv.Dispose();
+            dataSource.Dispose();
+        }
+
+        public List<long> GetCountryAdmins(long relationId, int adminLevel)
+        {
+            using (var comm = dataSource.CreateCommand("SELECT adm.id as id FROM admins adm INNER JOIN admins country ON (country.geom && adm.geom AND ST_Relate(country.geom, adm.geom, '2********')) WHERE country.id=@relationId and adm.adminlevel = @adminLevel;"))
+            {
+                comm.CommandTimeout = 120;
+                comm.Parameters.AddWithValue("@relationId", relationId);
+                comm.Parameters.AddWithValue("@adminLevel", adminLevel);
+                using var reader = comm.ExecuteReader();
+                {
+                    var result = new List<long>();
+                    while (reader.Read())
+                    {
+                        result.Add(reader.GetInt64(0));
+                    }
+                    return result;
+                }
+            }
+        }
+
+        internal void Playground()
+        {
+            var sw3 = Stopwatch.StartNew();
+            var countries = new Dictionary<long, PreparedPolygon>();
+            var dict = new Dictionary<long, int>();
+            var strs = new Dictionary<int, STRtree<long>>();
+            using (var comm = dataSource.CreateCommand("SELECT id, adminlevel, geom AS Envelope from admins"))
+            {
+                using (var reader = comm.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var id = reader.GetInt64(0);
+                        var adminLevel = reader.GetInt32(1);
+                        var envelope = (Geometry)reader.GetValue(2);
+                        dict.Add(id, adminLevel);
+                        if (!strs.TryGetValue(adminLevel, out var str))
+                            strs[adminLevel] = str = new();
+                        PreparedPolygon e2 = null;
+                        if (adminLevel == 2)
+                        {
+                            e2 = new PreparedPolygon((IPolygonal)envelope);
+                            countries.Add(id, e2);
+                        }
+                        str.Insert(envelope.EnvelopeInternal, id);
+                    }
+                }
+            }
+            Console.WriteLine(sw3.Elapsed);
+            foreach (var str in strs)
+            {
+                var sw = Stopwatch.StartNew();
+                str.Value.Build();
+                sw.Stop();
+                Console.WriteLine(str.Key + " " + sw.Elapsed);
+            }
+            Console.WriteLine(dict.Count);
+            Console.WriteLine(GC.GetTotalMemory(true) / (1024.0 * 1024));
+            sw3.Restart();
+            var candidates = new List<long>();
+            var country = countries[365331];
+            foreach (var candidate in strs[6].Query(country.Geometry.EnvelopeInternal))
+            {
+                candidates.Add(candidate);
+            }
+            Console.WriteLine(sw3.Elapsed);
+            for (int i = 0; i < 5; i++)
+            {
+                sw3.Restart();
+                var result = new ConcurrentBag<long>();
+                var polies = new List<(long Id, Geometry Poly)>();
+                using (var comm = dataSource.CreateCommand("SELECT id, geom from admins where id in (" + string.Join(",", candidates) + ")"))
+                {
+                    using (var reader = comm.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            var id = reader.GetInt64(0);
+                            var geom = (Geometry)reader.GetValue(1);
+                            polies.Add((id, geom));
+                        }
+                    }
+                }
+                sw3.Stop();
+                Console.WriteLine(i + " " + sw3.Elapsed);
+                Console.WriteLine(polies.Count);
+                sw3.Restart();
+                var result2 = Parallel.ForEach(polies, new ParallelOptions() { MaxDegreeOfParallelism = 24 }, (p) => {
+                    if (country.Overlaps(p.Poly))
+                        result.Add(p.Id);
+                });
+                sw3.Stop();
+                Console.WriteLine(i + " " + sw3.Elapsed);
+                Console.WriteLine(result.Count);
+            }
+            Console.WriteLine(GC.GetTotalMemory(true) / (1024.0 * 1024));
+        }
+
+        public bool DoesCountryExist(long relationId)
+        {
+            using (var comm = dataSource.CreateCommand("SELECT id FROM admins WHERE id=@relationId AND adminlevel=2"))
+            {
+                comm.Parameters.AddWithValue("@relationId", relationId);
+                using var reader = comm.ExecuteReader();
+                {
+                    while (reader.Read())
+                    {
+                        return true;
+                    }
+                    return false;
+                }
+            }
         }
     }
 }

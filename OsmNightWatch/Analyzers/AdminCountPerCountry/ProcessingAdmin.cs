@@ -1,15 +1,20 @@
-﻿using OsmNightWatch.PbfParsing;
+﻿using NetTopologySuite.Geometries;
+using OsmNightWatch.PbfParsing;
 
 namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 
-class ProcessingAdmin
+public class ProcessingAdmin
 {
-    public Relation Admin;
+    public Relation Relation;
     public HashSet<long> Countries = new HashSet<long>();
     public List<Way> Ways = new List<Way>();
+    public Geometry Polygon;
 
     public ProcessingAdmin(Relation relation)
     {
-        this.Admin = relation;
+        this.Relation = relation;
+        this.AdminLevel = int.Parse(relation.Tags!["admin_level"]);
     }
+
+    public int AdminLevel { get;  }
 }

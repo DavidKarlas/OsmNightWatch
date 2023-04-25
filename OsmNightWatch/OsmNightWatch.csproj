@@ -20,8 +20,8 @@
     <PackageReference Include="Azure.Storage.Blobs" Version="12.16.0" />
     <PackageReference Include="LibDeflate.NET" Version="1.9.1" />
     <PackageReference Include="LightningDB" Version="0.15.0" />
-    <PackageReference Include="Microsoft.FASTER.Core" Version="2.5.1" />
     <PackageReference Include="NetTopologySuite" Version="2.5.0" />
+    <PackageReference Include="Npgsql.NetTopologySuite" Version="8.0.0-preview.2" />
     <PackageReference Include="OsmSharp" Version="7.0.0-pre022" />
     <PackageReference Include="OsmSharp.Replication" Version="0.0.2-alpha" />
   </ItemGroup>

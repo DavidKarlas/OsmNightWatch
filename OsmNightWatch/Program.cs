@@ -13,11 +13,17 @@ using System.Xml.Serialization;
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
 
+Log("Hello");
 
 var path = @"C:\COSMOS\planet-230403.osm.pbf";
 
 using var database = new KeyValueDatabase(Path.GetFullPath("NightWatchDatabase"));
+await database.Initialize();
 database.BeginTransaction();
+
+//database.Playground();
+
+//return;
 
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);

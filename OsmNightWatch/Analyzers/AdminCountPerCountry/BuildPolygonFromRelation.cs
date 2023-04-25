@@ -7,75 +7,91 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
 {
     public static class BuildPolygonFromRelation
     {
-        public static (MultiPolygon Polygon, List<Way> Ways) BuildPolygon(Relation relation, IOsmGeoSource newOsmSource)
+        public static (Geometry Polygon, List<Way> Ways) BuildPolygon(Relation relation, IOsmGeoSource newOsmSource)
         {
             var result = InternalBuildPolygon(relation, newOsmSource);
             if (result.Polygon == MultiPolygon.Empty)
-                return (MultiPolygon.Empty, result.Ways);
-            var result2 = CascadedPolygonUnion.Union(result.Polygon.Geometries);
-            if (result2 is MultiPolygon mp)
-                return (mp, result.Ways);
-            return (new MultiPolygon(new[] { (Polygon)result2 }), result.Ways);
+                return result;
+            try
+            {
+                if (result.Polygon.Geometries.Length == 1)
+                {
+                    return (result.Polygon.Geometries[0], result.Ways);
+                }
+                var unionizedPolygon = CascadedPolygonUnion.Union(result.Polygon.Geometries);
+                return (unionizedPolygon, result.Ways);
+            }
+            catch
+            {
+                return result;
+            }
         }
 
         private static (MultiPolygon Polygon, List<Way> Ways) InternalBuildPolygon(Relation relation, IOsmGeoSource newOsmSource)
         {
-            //var innerWays = new List<Way>();
+            var innerWays = new List<Way>();
             var outerWays = new List<Way>();
-
-            if (!OpenPolygon.AdminOpenPolygonAnalyzer.IsValid(relation, newOsmSource, false))
-                return (MultiPolygon.Empty, outerWays);
 
             foreach (var member in relation.Members)
             {
                 switch (member.Role)
                 {
-                    //case "inner":
-                    //    if (member.Type != OsmGeoType.Way)
-                    //        throw new NotImplementedException();
-                    //    innerWays.Add(newOsmSource.GetWay(member.Id));
-                    //    break;
+                    case "inner":
+                        if (member.Type == OsmGeoType.Way)
+                            innerWays.Add(newOsmSource.GetWay(member.Id));
+                        break;
                     case "outer":
-                        switch (member.Type)
-                        {
-                            case OsmGeoType.Way:
-                                outerWays.Add(newOsmSource.GetWay(member.Id));
-                                break;
-                        }
+                        if (member.Type == OsmGeoType.Way)
+                            outerWays.Add(newOsmSource.GetWay(member.Id));
                         break;
                 }
             }
-
-            Polygonizer outerPolygonizer = new Polygonizer();
-            foreach (var outerWay in outerWays)
+            try
             {
-                var array = new Coordinate[outerWay.Nodes.Length];
-                for (int i = 0; i < outerWay.Nodes.Length; i++)
+                var outerPolygonizer = new Polygonizer();
+                foreach (var outerWay in outerWays)
                 {
-                    var node = newOsmSource.GetNode(outerWay.Nodes[i]);
-                    array[i] = node.ToCoordinate();
+                    var array = new Coordinate[outerWay.Nodes.Length];
+                    for (int i = 0; i < outerWay.Nodes.Length; i++)
+                    {
+                        var node = newOsmSource.GetNode(outerWay.Nodes[i]);
+                        array[i] = node.ToCoordinate();
+                    }
+                    outerPolygonizer.Add(new LineString(array.ToArray()));
                 }
-                outerPolygonizer.Add(new LineString(array.ToArray()));
+                var outerPolygons = outerPolygonizer.GetPolygons().OfType<Polygon>().ToArray();
+
+                if (innerWays.Count > 0)
+                {
+                    Polygonizer innerPolygonizer = new Polygonizer();
+                    foreach (var innerWay in innerWays)
+                    {
+                        innerPolygonizer.Add(new LineString(innerWay.Nodes.Select(x => newOsmSource.GetNode(x).ToCoordinate()).ToArray()));
+                    }
+
+                    for (int i = 0; i < outerPolygons.Length; i++)
+                    {
+                        var poly = outerPolygons[i];
+                        var inners = new List<LinearRing>();
+                        foreach (var innerPolygon in innerPolygonizer.GetPolygons().OfType<Polygon>())
+                        {
+                            if (poly.Contains(innerPolygon))
+                            {
+                                inners.Add(innerPolygon.Shell);
+                            }
+                        }
+                        outerPolygons[i] = new Polygon(poly.Shell, inners.ToArray());
+                    }
+                }
+                outerWays.AddRange(innerWays);
+                return (new MultiPolygon(outerPolygons), outerWays);
             }
-            var outerPolygons = outerPolygonizer.GetPolygons().OfType<Polygon>().ToArray();
-
-            //TODO: handle inner ways
-            //if (innerWays.Count > 0)
-            //{
-            //    //Polygonizer innerPolygonizer = new Polygonizer();
-            //    //foreach (var innerWay in innerWays)
-            //    //{
-            //    //    innerPolygonizer.Add(new LineString(innerWay.Nodes.Select(x => newOsmSource.GetNode(x).ToCoordinate()).ToArray()));
-            //    //}
-
-            //    //foreach (var innerPolygon in innerPolygonizer.GetPolygons())
-            //    //{
-
-            //    //}
-            //}
-
-            //TODO: include inner ways when used
-            return (new MultiPolygon(outerPolygons), outerWays);
+            catch (Exception)
+            {
+                //TODO, add exception message to Issue description
+            }
+            outerWays.AddRange(innerWays);
+            return (MultiPolygon.Empty, outerWays);
         }
     }
 }

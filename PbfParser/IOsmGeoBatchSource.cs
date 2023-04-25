@@ -1,4 +1,5 @@
 ﻿using OsmSharp.Tags;
+using System.Collections.Generic;
 
 namespace OsmNightWatch.PbfParsing
 {
@@ -51,6 +52,8 @@ namespace OsmNightWatch.PbfParsing
         public double Latitude { get; set; }
         public double Longitude { get; set; }
 
+        public HashSet<uint>? ParentWays { get; set; }
+
         public override OsmGeoType Type => OsmGeoType.Node;
     }
 
@@ -63,6 +66,8 @@ namespace OsmNightWatch.PbfParsing
         }
 
         public long[] Nodes { get; set; }
+
+        public HashSet<uint>? ParentRelations { get; set; }
 
         public override OsmGeoType Type => OsmGeoType.Way;
     }

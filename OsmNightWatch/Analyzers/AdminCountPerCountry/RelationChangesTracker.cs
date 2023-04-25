@@ -5,38 +5,35 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 
 public class RelationChangesTracker
 {
-    Dictionary<long, HashSet<uint>> NodeToWay = new();
-    Dictionary<uint, HashSet<uint>> WayToRelation = new();
-    HashSet<long> Relations = new();
-
-    public void AddRelation(long relationId, List<Way> ways)
+    public void AddRelation(long relationId, List<Way> ways, IOsmGeoSource newOsmSource)
     {
-        Relations.Add(relationId);
         foreach (var way in ways)
         {
-            if (WayToRelation.TryGetValue((uint)way.Id!, out var relations))
+            lock (way)
             {
-                relations.Add((uint)relationId);
-            }
-            else
-            {
-                WayToRelation.Add((uint)way.Id!, new HashSet<uint>() { (uint)relationId });
-                foreach (var node in way.Nodes)
+                if (way.ParentRelations == null)
                 {
-                    if (NodeToWay.TryGetValue(node, out var nodeToWayWays))
+                    way.ParentRelations = new HashSet<uint>(1);
+                }
+                way.ParentRelations.Add((uint)relationId);
+
+                foreach (var nodeId in way.Nodes)
+                {
+                    var node = newOsmSource.GetNode(nodeId);
+                    lock (node)
                     {
-                        nodeToWayWays.Add((uint)way.Id!);
-                    }
-                    else
-                    {
-                        NodeToWay.Add(node, new HashSet<uint>() { (uint)way.Id! });
+                        if (node.ParentWays == null)
+                        {
+                            node.ParentWays = new HashSet<uint>(1);
+                        }
+                        node.ParentWays.Add((uint)way.Id);
                     }
                 }
             }
         }
     }
 
-    public RelationChangesTracker(string? existingPath = null)
+    public RelationChangesTracker()
     {
         if (string.IsNullOrEmpty(existingPath))
         {
@@ -44,12 +41,12 @@ public class RelationChangesTracker
         }
 
         ReadOnlySpan<byte> span = File.ReadAllBytes(existingPath);
-        var relationsCount = BinSerialize.ReadInt(ref span);
+        var relationsCount = BinSerialize.ReadUInt(ref span);
         for (int i = 0; i < relationsCount; i++)
         {
             Relations.Add(BinSerialize.ReadUInt(ref span));
         }
-        var wayToRelationCount = BinSerialize.ReadInt(ref span);
+        var wayToRelationCount = BinSerialize.ReadUInt(ref span);
         for (int i = 0; i < wayToRelationCount; i++)
         {
             var way = BinSerialize.ReadUInt(ref span);
@@ -61,7 +58,7 @@ public class RelationChangesTracker
             }
             WayToRelation.Add(way, hashset);
         }
-        var nodeToWayCount = BinSerialize.ReadInt(ref span);
+        var nodeToWayCount = BinSerialize.ReadUInt(ref span);
         for (int i = 0; i < nodeToWayCount; i++)
         {
             var node = BinSerialize.ReadLong(ref span);
@@ -75,35 +72,48 @@ public class RelationChangesTracker
         }
     }
 
-    public byte[] Serialize()
+    public void Serialize(string filePath)
     {
-        var memoryStream = new MemoryStream();
-        memoryStream.Write(BitConverter.GetBytes(Relations.Count));
+        using var file = File.Create(filePath);
+        Span<byte> buffer = new byte[4 * (Relations.Count + 1)];
+        var span = buffer;
+        BinSerialize.WriteUInt(ref span, (uint)Relations.Count);
         foreach (var relation in Relations)
         {
-            memoryStream.Write(BitConverter.GetBytes(relation));
+            BinSerialize.WriteUInt(ref span, (uint)relation);
         }
-        memoryStream.Write(BitConverter.GetBytes(WayToRelation.Count));
+        file.Write(buffer);
+
+        span = buffer;
+        BinSerialize.WriteUInt(ref span, (uint)WayToRelation.Count);
+        file.Write(buffer.Slice(0, 4));
         foreach (var relation in WayToRelation)
         {
-            memoryStream.Write(BitConverter.GetBytes(relation.Key));
-            memoryStream.Write(BitConverter.GetBytes((byte)relation.Value.Count));
+            span = buffer;
+            BinSerialize.WriteUInt(ref span, relation.Key);
+            BinSerialize.WriteByte(ref span, (byte)relation.Value.Count);
             foreach (var item in relation.Value)
             {
-                memoryStream.Write(BitConverter.GetBytes(item));
+                BinSerialize.WriteUInt(ref span, item);
             }
+            file.Write(buffer.Slice(0, buffer.Length - span.Length));
+
         }
+
+        span = buffer;
+        BinSerialize.WriteUInt(ref span, (uint)NodeToWay.Count);
+        file.Write(buffer.Slice(0, 4));
         foreach (var relation in NodeToWay)
         {
-            memoryStream.Write(BitConverter.GetBytes(relation.Key));
-            memoryStream.Write(BitConverter.GetBytes((byte)relation.Value.Count));
+            span = buffer;
+            BinSerialize.WriteLong(ref span, relation.Key);
+            BinSerialize.WriteByte(ref span, (byte)relation.Value.Count);
             foreach (var item in relation.Value)
             {
-                memoryStream.Write(BitConverter.GetBytes(item));
+                BinSerialize.WriteUInt(ref span, item);
             }
+            file.Write(buffer.Slice(0, buffer.Length - span.Length));
         }
-        memoryStream.Position = 0;
-        return memoryStream.ToArray();
     }
 
 
