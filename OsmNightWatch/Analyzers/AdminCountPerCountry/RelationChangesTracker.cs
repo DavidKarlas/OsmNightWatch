@@ -5,35 +5,41 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 
 public class RelationChangesTracker
 {
+    Dictionary<long, HashSet<uint>> NodeToWay = new();
+    Dictionary<uint, HashSet<uint>> WayToRelation = new();
+    HashSet<long> Relations = new();
+
     public void AddRelation(long relationId, List<Way> ways, IOsmGeoSource newOsmSource)
     {
-        foreach (var way in ways)
+        lock (Relations)
         {
-            lock (way)
+            Relations.Add(relationId);
+            foreach (var way in ways)
             {
-                if (way.ParentRelations == null)
+                if (WayToRelation.TryGetValue((uint)way.Id!, out var relations))
                 {
-                    way.ParentRelations = new HashSet<uint>(1);
+                    relations.Add((uint)relationId);
                 }
-                way.ParentRelations.Add((uint)relationId);
-
-                foreach (var nodeId in way.Nodes)
+                else
                 {
-                    var node = newOsmSource.GetNode(nodeId);
-                    lock (node)
+                    WayToRelation.Add((uint)way.Id!, new HashSet<uint>() { (uint)relationId });
+                    foreach (var node in way.Nodes)
                     {
-                        if (node.ParentWays == null)
+                        if (NodeToWay.TryGetValue(node, out var nodeToWayWays))
                         {
-                            node.ParentWays = new HashSet<uint>(1);
+                            nodeToWayWays.Add((uint)way.Id!);
                         }
-                        node.ParentWays.Add((uint)way.Id);
+                        else
+                        {
+                            NodeToWay.Add(node, new HashSet<uint>() { (uint)way.Id! });
+                        }
                     }
                 }
             }
         }
     }
 
-    public RelationChangesTracker()
+    public RelationChangesTracker(string? existingPath = null)
     {
         if (string.IsNullOrEmpty(existingPath))
         {

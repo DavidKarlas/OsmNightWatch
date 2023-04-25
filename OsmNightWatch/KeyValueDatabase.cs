@@ -201,18 +201,6 @@ namespace OsmNightWatch
                     var buffer = originalBuffer;
                     BinSerialize.WriteDouble(ref buffer, element.Value.Latitude);
                     BinSerialize.WriteDouble(ref buffer, element.Value.Longitude);
-                    if (element.Value.ParentWays == null)
-                    {
-                        BinSerialize.WriteByte(ref buffer, 0);
-                    }
-                    else
-                    {
-                        BinSerialize.WriteUShort(ref buffer, (byte)element.Value.ParentWays.Count);
-                        foreach (var item in element.Value.ParentWays)
-                        {
-                            BinSerialize.WriteUInt(ref buffer, item);
-                        }
-                    }
                     WriteTags(ref buffer, element.Value.Tags);
                     buffer = originalBuffer.Slice(0, originalBuffer.Length - buffer.Length);
                     if (initial)
@@ -296,18 +284,6 @@ namespace OsmNightWatch
                     {
                         BinSerialize.WriteLong(ref buffer, nodeId);
                     }
-                    if (element.Value.ParentRelations == null)
-                    {
-                        BinSerialize.WriteByte(ref buffer, 0);
-                    }
-                    else
-                    {
-                        BinSerialize.WriteUShort(ref buffer, (byte)element.Value.ParentRelations.Count);
-                        foreach (var item in element.Value.ParentRelations)
-                        {
-                            BinSerialize.WriteUInt(ref buffer, item);
-                        }
-                    }
                     WriteTags(ref buffer, element.Value.Tags);
                     tx.Put(db, keyBuffer, originalBuffer.Slice(0, originalBuffer.Length - buffer.Length));
                 }
@@ -347,6 +323,11 @@ namespace OsmNightWatch
             }
         }
 
+        public bool TryGetElement(string dbName, long id, out OsmGeo? element)
+        {
+            throw new NotImplementedException();
+        }
+
         public bool TryGetNode(long id, out Node? nodeFromDb)
         {
             if (transaction is not LightningTransaction tx)
@@ -368,20 +349,8 @@ namespace OsmNightWatch
                 }
                 var lat = BinSerialize.ReadDouble(ref buffer);
                 var lon = BinSerialize.ReadDouble(ref buffer);
-                var parentWaysCount = BinSerialize.ReadByte(ref buffer);
-                HashSet<uint>? parentWays = null;
-                if (parentWaysCount > 0)
-                {
-                    parentWays = new HashSet<uint>();
-                    for (int i = 0; i < parentWaysCount; i++)
-                    {
-                        parentWays.Add(BinSerialize.ReadUInt(ref buffer));
-                    }
-                }
                 var tags = ReadTags(ref buffer);
-                nodeFromDb = new Node(id, lat, lon, tags) {
-                    ParentWays = parentWays
-                };
+                nodeFromDb = new Node(id, lat, lon, tags);
                 return true;
             }
             nodeFromDb = null;
@@ -413,20 +382,8 @@ namespace OsmNightWatch
                 {
                     nodes[i] = BinSerialize.ReadLong(ref buffer);
                 }
-                var parentRelationsCount = BinSerialize.ReadByte(ref buffer);
-                HashSet<uint>? parentRelations = null;
-                if (parentRelationsCount > 0)
-                {
-                    parentRelations = new HashSet<uint>();
-                    for (int i = 0; i < parentRelationsCount; i++)
-                    {
-                        parentRelations.Add(BinSerialize.ReadUInt(ref buffer));
-                    }
-                }
                 var tags = ReadTags(ref buffer);
-                wayFromDb = new Way(id, nodes, tags) {
-                    ParentRelations = parentRelations
-                };
+                wayFromDb = new Way(id, nodes, tags);
                 return true;
             }
             wayFromDb = null;
