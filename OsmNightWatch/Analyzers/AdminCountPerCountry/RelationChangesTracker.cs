@@ -5,24 +5,32 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 
 public class RelationChangesTracker
 {
-    Dictionary<long, HashSet<uint>> NodeToWay = new();
-    Dictionary<uint, HashSet<uint>> WayToRelation = new();
-    HashSet<long> Relations = new();
+    public Dictionary<long, HashSet<uint>> NodeToWay = new();
+    public Dictionary<uint, HashSet<uint>> WayToRelation = new();
+    public HashSet<uint> Relations = new();
+    public HashSet<uint> PersistentRelations = new();
+    private KeyValueDatabase database;
 
-    public void AddRelation(long relationId, List<Way> ways, IOsmGeoSource newOsmSource)
+    public RelationChangesTracker(KeyValueDatabase database)
+    {
+        this.database = database;
+    }
+
+    public void AddRelation(uint relationId, List<Way> ways)
     {
         lock (Relations)
         {
-            Relations.Add(relationId);
+            if (PersistentRelations.Add(relationId))
+                Relations.Add(relationId);
             foreach (var way in ways)
             {
                 if (WayToRelation.TryGetValue((uint)way.Id!, out var relations))
                 {
-                    relations.Add((uint)relationId);
+                    relations.Add(relationId);
                 }
                 else
                 {
-                    WayToRelation.Add((uint)way.Id!, new HashSet<uint>() { (uint)relationId });
+                    WayToRelation.Add((uint)way.Id!, new HashSet<uint>() { relationId });
                     foreach (var node in way.Nodes)
                     {
                         if (NodeToWay.TryGetValue(node, out var nodeToWayWays))
@@ -39,124 +47,36 @@ public class RelationChangesTracker
         }
     }
 
-    public RelationChangesTracker(string? existingPath = null)
+    public HashSet<uint> GetChangedRelations(MergedChangeset changeSet)
     {
-        if (string.IsNullOrEmpty(existingPath))
+        var result = new HashSet<uint>();
+        var waysSet = new HashSet<uint>();
+        foreach (var node in changeSet.OsmNodes)
         {
-            return;
-        }
-
-        ReadOnlySpan<byte> span = File.ReadAllBytes(existingPath);
-        var relationsCount = BinSerialize.ReadUInt(ref span);
-        for (int i = 0; i < relationsCount; i++)
-        {
-            Relations.Add(BinSerialize.ReadUInt(ref span));
-        }
-        var wayToRelationCount = BinSerialize.ReadUInt(ref span);
-        for (int i = 0; i < wayToRelationCount; i++)
-        {
-            var way = BinSerialize.ReadUInt(ref span);
-            var hashset = new HashSet<uint>();
-            var count = BinSerialize.ReadByte(ref span);
-            for (int j = 0; j < count; j++)
+            if (node.Value == null || node.Value.Version < 2)
             {
-                hashset.Add(BinSerialize.ReadUInt(ref span));
+                continue;
             }
-            WayToRelation.Add(way, hashset);
+            database.GetNodeToWay(node.Key, waysSet);
         }
-        var nodeToWayCount = BinSerialize.ReadUInt(ref span);
-        for (int i = 0; i < nodeToWayCount; i++)
+
+        foreach (var way in changeSet.OsmWays)
         {
-            var node = BinSerialize.ReadLong(ref span);
-            var hashset = new HashSet<uint>();
-            var count = BinSerialize.ReadByte(ref span);
-            for (int j = 0; j < count; j++)
+            if (way.Value == null || way.Value.Version < 2)
             {
-                hashset.Add(BinSerialize.ReadUInt(ref span));
+                continue;
             }
-            NodeToWay.Add(node, hashset);
-        }
-    }
-
-    public void Serialize(string filePath)
-    {
-        using var file = File.Create(filePath);
-        Span<byte> buffer = new byte[4 * (Relations.Count + 1)];
-        var span = buffer;
-        BinSerialize.WriteUInt(ref span, (uint)Relations.Count);
-        foreach (var relation in Relations)
-        {
-            BinSerialize.WriteUInt(ref span, (uint)relation);
-        }
-        file.Write(buffer);
-
-        span = buffer;
-        BinSerialize.WriteUInt(ref span, (uint)WayToRelation.Count);
-        file.Write(buffer.Slice(0, 4));
-        foreach (var relation in WayToRelation)
-        {
-            span = buffer;
-            BinSerialize.WriteUInt(ref span, relation.Key);
-            BinSerialize.WriteByte(ref span, (byte)relation.Value.Count);
-            foreach (var item in relation.Value)
-            {
-                BinSerialize.WriteUInt(ref span, item);
-            }
-            file.Write(buffer.Slice(0, buffer.Length - span.Length));
-
+            waysSet.Add((uint)way.Key);
         }
 
-        span = buffer;
-        BinSerialize.WriteUInt(ref span, (uint)NodeToWay.Count);
-        file.Write(buffer.Slice(0, 4));
-        foreach (var relation in NodeToWay)
+        foreach (var wayId in waysSet)
         {
-            span = buffer;
-            BinSerialize.WriteLong(ref span, relation.Key);
-            BinSerialize.WriteByte(ref span, (byte)relation.Value.Count);
-            foreach (var item in relation.Value)
-            {
-                BinSerialize.WriteUInt(ref span, item);
-            }
-            file.Write(buffer.Slice(0, buffer.Length - span.Length));
-        }
-    }
-
-
-    public HashSet<long> GetChangedRelations(MergedChangeset changeSet)
-    {
-        var result = new HashSet<long>();
-        foreach (var node in changeSet.Nodes.Keys)
-        {
-            if (NodeToWay.TryGetValue(node, out var ways))
-            {
-                foreach (var way in ways)
-                {
-                    if (WayToRelation.TryGetValue(way, out var relations))
-                    {
-                        foreach (var relation in relations)
-                        {
-                            result.Add(relation);
-                        }
-                    }
-                }
-            }
-        }
-
-        foreach (var way in changeSet.Ways.Keys)
-        {
-            if (WayToRelation.TryGetValue((uint)way, out var relations))
-            {
-                foreach (var relation in relations)
-                {
-                    result.Add(relation);
-                }
-            }
+            database.GetWayToRelation(wayId, result);
         }
 
         foreach (var relation in changeSet.Relations.Keys)
         {
-            if (Relations.Contains((uint)relation))
+            if (PersistentRelations.Contains(relation))
             {
                 result.Add(relation);
             }

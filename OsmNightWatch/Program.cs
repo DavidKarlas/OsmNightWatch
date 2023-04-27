@@ -21,10 +21,6 @@ using var database = new KeyValueDatabase(Path.GetFullPath("NightWatchDatabase")
 await database.Initialize();
 database.BeginTransaction();
 
-//database.Playground();
-
-//return;
-
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
 var analyzers = new IOsmAnalyzer[] {
@@ -74,7 +70,7 @@ retry:
 
         newIssuesData.SetTimestampsAndLastKnownGood(oldIssuesData);
         oldIssuesData = newIssuesData;
-        //await UploadIssues(replicationState, newIssuesData);
+        await UploadIssues(replicationState, newIssuesData);
         database.CommitTransaction();
     }
     catch (Exception)
@@ -137,7 +133,7 @@ async Task<OsmChange> DownloadChangeset(ReplicationConfig config, long sequenceN
             var replicationFilePath = ReplicationFilePath(sequenceNumber);
             var url = DiffUrl(config, replicationFilePath);
             var cachePath = Path.Combine(@"C:\", "ReplicationCache", config.IsDaily ? "daily" : config.IsHourly ? "hour" : "minute", replicationFilePath);
-            if (!ignoreCache && !File.Exists(cachePath))
+            if (ignoreCache || !File.Exists(cachePath))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(cachePath));
                 using FileStream fsw = File.Create(cachePath);

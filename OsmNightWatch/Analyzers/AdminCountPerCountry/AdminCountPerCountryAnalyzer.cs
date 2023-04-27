@@ -1,9 +1,5 @@
-﻿using NetTopologySuite.Geometries;
-using NetTopologySuite.Index.Strtree;
-using OsmNightWatch.Lib;
+﻿using OsmNightWatch.Lib;
 using OsmNightWatch.PbfParsing;
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
 using System.Text.Json;
 
 namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
@@ -17,7 +13,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
     public AdminCountPerCountryAnalyzer(KeyValueDatabase database)
     {
         this.database = database;
-        relationChangesTracker = database.ReadRelationChangesTracker(1);
+        relationChangesTracker = database.ReadRelationChangesTracker();
     }
 
     public string AnalyzerName => nameof(AdminCountPerCountryAnalyzer);
@@ -34,37 +30,106 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
             }
     };
 
-    private void UpdateRelations(IEnumerable<(long Id, Relation Relation)> relevantThings, IOsmGeoSource newOsmSource)
+    private IEnumerable<IssueData> UpdateRelations((uint Id, Relation Relation)[] relevantThings, IOsmGeoSource newOsmSource)
     {
         Parallel.ForEach(relevantThings, new ParallelOptions() {
             MaxDegreeOfParallelism = 32
         }, (admin) => {
-            if (admin.Relation == null)
+            // Drop admin from database if it was deleted or doesn't meet admin criteria
+            if (admin.Relation == null || admin.Relation.Tags == null || !FilterSettings.Filters.Single().Matches(admin.Relation))
             {
-                database.DeleteAdmin(admin.Id).Wait();
+                database.DeleteAdmin(admin.Id);
                 return;
             }
             var polygon = BuildPolygonFromRelation.BuildPolygon(admin.Relation, newOsmSource);
-            relationChangesTracker.AddRelation(admin.Id, polygon.Ways, newOsmSource);
-            if (!polygon.Polygon.IsEmpty && admin.Relation.Tags!.TryGetValue("admin_level", out var admLvl) && int.TryParse(admLvl, out var admLvlInt))
+            relationChangesTracker.AddRelation(admin.Id, polygon.Ways);
+            var geom = polygon.Polygon.IsEmpty || !polygon.Polygon.IsValid ? null : polygon.Polygon;
+            if (!admin.Relation.Tags.TryGetValue("name:en", out var friendlyName))
             {
-                database.UpsertAdmin(admin.Id, admLvlInt, polygon.Polygon).Wait();
+                if (!admin.Relation.Tags.TryGetValue("name", out friendlyName))
+                {
+                    friendlyName = "";
+                }
             }
-            else
-            {
-                database.DeleteAdmin(admin.Id).Wait();
-            }
+            database.UpsertAdmin(admin.Id, friendlyName, int.Parse(admin.Relation.Tags!["admin_level"]), geom);
         });
 
-        database.WriteRelationChangesTracker(1, relationChangesTracker);
+        database.WriteRelationChangesTracker(relationChangesTracker);
+
+        var expectedState = JsonSerializer.Deserialize<StateOfTheAdmins>(new HttpClient().GetStringAsync("https://davidupload.blob.core.windows.net/data/current2.json").Result);
+
+        if (currentState == null)
+        {
+            currentState = CreateCurrentState(expectedState!);
+        }
+        else
+        {
+            currentState = UpdateCurrentState(currentState, relevantThings);
+        }
+
+        foreach (var (relationId, name, adminLevel) in database.GetBrokenAdmins())
+        {
+            var issueType = "OpenAdminPolygon";
+            if (adminLevel > 6)
+            {
+                issueType += adminLevel;
+            }
+            yield return new IssueData() {
+                IssueType = "MissingCountry",
+                FriendlyName = name,
+                OsmType = "R",
+                OsmId = relationId
+            };
+        }
+
+        var currentCountries = currentState.Countries.ToDictionary(c => c.RelationId);
+        foreach (var expectedCountry in expectedState.Countries)
+        {
+            var country = currentCountries[expectedCountry.RelationId];
+            if (!country.IsValid)
+            {
+                yield return new IssueData() {
+                    IssueType = "MissingCountry",
+                    FriendlyName = expectedCountry.EnglishName,
+                    OsmType = "R",
+                    OsmId = expectedCountry.RelationId
+                };
+                continue;
+            }
+            foreach (var expectedAdmins in expectedCountry.Admins)
+            {
+                var actualAdmins = country.Admins[expectedAdmins.Key];
+
+                foreach (var missingAdmin in expectedAdmins.Value.Except(actualAdmins))
+                {
+                    yield return new IssueData() {
+                        IssueType = "MissingAdmin",
+                        FriendlyName = expectedCountry.EnglishName + " lost " + missingAdmin,
+                        OsmType = "R",
+                        OsmId = missingAdmin
+                    };
+                }
+
+                foreach (var extraAdmin in actualAdmins.Except(expectedAdmins.Value))
+                {
+                    yield return new IssueData() {
+                        IssueType = "ExtraAdmin",
+                        FriendlyName = expectedCountry.EnglishName + " gained " + extraAdmin,
+                        OsmType = "R",
+                        OsmId = extraAdmin
+                    };
+                }
+            }
+        }
     }
 
     public IEnumerable<IssueData> ProcessPbf(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource)
     {
         Utils.BatchLoad(relevantThings, newOsmSource, true, true);
-        UpdateRelations(relevantThings.Select(r => (r.Id, (Relation)r)), newOsmSource);
-        return Array.Empty<IssueData>();
+        return UpdateRelations(relevantThings.Select(r => ((uint)r.Id, (Relation)r)).ToArray(), newOsmSource);
     }
+
+    StateOfTheAdmins? currentState;
 
     public IEnumerable<IssueData> ProcessChangeset(MergedChangeset changeSet, IOsmGeoSource newOsmSource)
     {
@@ -77,53 +142,119 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
                 continue;
             if (filter.Matches(relation))
             {
-                changedRelations.Add(relation.Id);
+                changedRelations.Add((uint)relation.Id);
             }
         }
 
-        UpdateRelations(changedRelations.Select(id => (id, newOsmSource.GetRelation(id))), newOsmSource);
+        return UpdateRelations(changedRelations.Select(id => (id, newOsmSource.GetRelation(id))).ToArray(), newOsmSource);
+    }
 
-        var expectedState = JsonSerializer.Deserialize<StateOfTheAdmins>(new HttpClient().GetStringAsync("https://davidupload.blob.core.windows.net/data/current.json").Result);
-
-        foreach (var expectedCountry in expectedState.Countries)
+    private StateOfTheAdmins UpdateCurrentState(StateOfTheAdmins oldState, (uint Id, Relation Relation)[] relevantThings)
+    {
+        var thingsThatNeedReevaluation = new HashSet<(uint CountryId, int adminLevel)>();
+        foreach (var (id, _) in relevantThings)
         {
-            var countryExists = database.DoesCountryExist(expectedCountry.RelationId);
-            if (!countryExists)
+            if (oldState.AdminsToCountry.TryGetValue(id, out var relevantLevels))
             {
-                yield return new IssueData() {
-                    IssueType = "MissingCountry",
-                    FriendlyName = expectedCountry.EnglishName,
-                    OsmType = "R",
-                    OsmId = expectedCountry.RelationId
-                };
+                foreach (var countryLevel in relevantLevels)
+                {
+                    thingsThatNeedReevaluation.Add(countryLevel);
+                }
+            }
+        }
+        var countries = oldState.Countries.ToDictionary(d => d.RelationId);
+        foreach (var relevantThing in relevantThings)
+        {
+            if (countries.TryGetValue(relevantThing.Id, out var country))
+            {
+                foreach (var level in country.Admins)
+                {
+                    thingsThatNeedReevaluation.Add((country.RelationId, int.Parse(level.Key)));
+                }
+            }
+        }
+
+        foreach (var (CountryId, adminLevel) in database.GetCountryAndLevelForAdmins(relevantThings.Select((i) => i.Id).Except(countries.Keys).ToList()))
+        {
+            thingsThatNeedReevaluation.Add(((uint)CountryId, adminLevel));
+        }
+
+        var newState = new StateOfTheAdmins(oldState.AdminsToCountry);
+        foreach (var oldCountry in oldState.Countries)
+        {
+            var currentCountry = new Country() {
+                EnglishName = oldCountry.EnglishName,
+                Iso2 = oldCountry.Iso2,
+                Iso3 = oldCountry.Iso3,
+                RelationId = oldCountry.RelationId
+            };
+            newState.Countries.Add(currentCountry);
+            if (!database.DoesCountryExist(oldCountry.RelationId))
+            {
+                foreach (var expectedAdminLevelGroup in oldCountry.Admins)
+                {
+                    currentCountry.Admins.Add(expectedAdminLevelGroup.Key, new(0));
+                }
+                currentCountry.IsValid = false;
                 continue;
             }
-            foreach (var adminLevel in expectedCountry.Admins)
+            currentCountry.IsValid = true;
+            foreach (var expectedAdminLevelGroup in oldCountry.Admins)
             {
-                var sw = Stopwatch.StartNew();
-                var actualAdmins = database.GetCountryAdmins(expectedCountry.RelationId, int.Parse(adminLevel.Key));
+                int adminLevel = int.Parse(expectedAdminLevelGroup.Key);
 
-                foreach (var missingAdmin in adminLevel.Value.Except(actualAdmins))
+                if (thingsThatNeedReevaluation.Contains((currentCountry.RelationId, adminLevel)))
                 {
-                    yield return new IssueData() {
-                        IssueType = "MissingAdmin",
-                        FriendlyName = expectedCountry.EnglishName,
-                        OsmType = "R",
-                        OsmId = missingAdmin
-                    };
+                    var actualAdmins = database.GetCountryAdmins(oldCountry.RelationId, adminLevel);
+                    actualAdmins.Sort();
+                    currentCountry.Admins.Add(expectedAdminLevelGroup.Key, actualAdmins);
+                    foreach (var item in actualAdmins)
+                    {
+                        if (!newState.AdminsToCountry.TryGetValue((uint)item, out var memberOf))
+                        {
+                            newState.AdminsToCountry[(uint)item] = memberOf = new();
+                        }
+                        memberOf.Add((currentCountry.RelationId, adminLevel));
+                    }
                 }
-
-                foreach (var extraAdmin in actualAdmins.Except(adminLevel.Value))
+                else
                 {
-                    yield return new IssueData() {
-                        IssueType = "ExtraAdmin",
-                        FriendlyName = expectedCountry.EnglishName,
-                        OsmType = "R",
-                        OsmId = extraAdmin
-                    };
+                    currentCountry.Admins.Add(expectedAdminLevelGroup.Key, expectedAdminLevelGroup.Value);
                 }
-                Console.WriteLine(sw.Elapsed + " " + expectedCountry.EnglishName + " Lvl:" + adminLevel.Key + " Total:" + actualAdmins.Count + " Extra:" + actualAdmins.Except(adminLevel.Value).Count() + " Missing:" + adminLevel.Value.Except(actualAdmins).Count());
             }
         }
+        return newState;
+    }
+
+    private StateOfTheAdmins CreateCurrentState(StateOfTheAdmins expectedState)
+    {
+        var newState = new StateOfTheAdmins();
+        foreach (var expectedCountry in expectedState.Countries)
+        {
+            var currentCountry = new Country() {
+                EnglishName = expectedCountry.EnglishName,
+                Iso2 = expectedCountry.Iso2,
+                Iso3 = expectedCountry.Iso3,
+                RelationId = expectedCountry.RelationId
+            };
+            newState.Countries.Add(currentCountry);
+            currentCountry.IsValid = database.DoesCountryExist(expectedCountry.RelationId);
+            foreach (var expectedAdminLevelGroup in expectedCountry.Admins)
+            {
+                int adminLevel = int.Parse(expectedAdminLevelGroup.Key);
+                var actualAdmins = currentCountry.IsValid ? database.GetCountryAdmins(expectedCountry.RelationId, adminLevel) : new(0);
+                currentCountry.Admins.Add(expectedAdminLevelGroup.Key, actualAdmins);
+                actualAdmins.Sort();
+                foreach (var item in actualAdmins)
+                {
+                    if (!newState.AdminsToCountry.TryGetValue((uint)item, out var memberOf))
+                    {
+                        newState.AdminsToCountry[(uint)item] = memberOf = new();
+                    }
+                    memberOf.Add((currentCountry.RelationId, adminLevel));
+                }
+            }
+        }
+        return newState;
     }
 }

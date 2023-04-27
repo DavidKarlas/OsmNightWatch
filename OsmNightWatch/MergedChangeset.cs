@@ -1,6 +1,5 @@
-﻿using OsmNightWatch.PbfParsing;
+﻿using OsmSharp;
 using OsmSharp.Changesets;
-using System.Xml.Linq;
 
 namespace OsmNightWatch
 {
@@ -8,30 +7,34 @@ namespace OsmNightWatch
     {
         public OsmChange OriginalChangeset { get; }
 
-        public Dictionary<long, Relation?> Relations { get; }
-        public Dictionary<long, Way?> Ways { get; }
-        public Dictionary<long, Node?> Nodes { get; }
+        public Dictionary<uint, PbfParsing.Relation?> Relations { get; }
+        public Dictionary<uint, PbfParsing.Way?> Ways { get; }
+        public Dictionary<long, PbfParsing.Node?> Nodes { get; }
+
+        public Dictionary<long, Relation?> OsmRelations { get; }
+        public Dictionary<long, Way?> OsmWays { get; }
+        public Dictionary<long, Node?> OsmNodes { get; }
 
         public MergedChangeset(OsmChange changeset)
         {
             OriginalChangeset = changeset;
 
-            var nodes = new Dictionary<long, OsmSharp.Node>();
-            var ways = new Dictionary<long, OsmSharp.Way>();
-            var relations = new Dictionary<long, OsmSharp.Relation>();
+            var nodes = new Dictionary<long, Node?>();
+            var ways = new Dictionary<long, Way?>();
+            var relations = new Dictionary<long, Relation?>();
 
             foreach (var element in changeset.Create)
             {
                 switch (element.Type)
                 {
-                    case OsmSharp.OsmGeoType.Node:
-                        nodes[(long)element.Id!] = (OsmSharp.Node)element;
+                    case OsmGeoType.Node:
+                        nodes[(long)element.Id!] = (Node)element;
                         break;
-                    case OsmSharp.OsmGeoType.Way:
-                        ways[(long)element.Id!] = (OsmSharp.Way)element;
+                    case OsmGeoType.Way:
+                        ways[(long)element.Id!] = (Way)element;
                         break;
-                    case OsmSharp.OsmGeoType.Relation:
-                        relations[(long)element.Id!] = (OsmSharp.Relation)element;
+                    case OsmGeoType.Relation:
+                        relations[(long)element.Id!] = (Relation)element;
                         break;
                 }
             }
@@ -39,14 +42,14 @@ namespace OsmNightWatch
             {
                 switch (element.Type)
                 {
-                    case OsmSharp.OsmGeoType.Node:
-                        nodes[(long)element.Id!] = (OsmSharp.Node)element;
+                    case OsmGeoType.Node:
+                        nodes[(long)element.Id!] = (Node)element;
                         break;
-                    case OsmSharp.OsmGeoType.Way:
-                        ways[(long)element.Id!] = (OsmSharp.Way)element;
+                    case OsmGeoType.Way:
+                        ways[(long)element.Id!] = (Way)element;
                         break;
-                    case OsmSharp.OsmGeoType.Relation:
-                        relations[(long)element.Id!] = (OsmSharp.Relation)element;
+                    case OsmGeoType.Relation:
+                        relations[(long)element.Id!] = (Relation)element;
                         break;
                 }
             }
@@ -54,7 +57,7 @@ namespace OsmNightWatch
             {
                 switch (change.Type)
                 {
-                    case OsmSharp.OsmGeoType.Node:
+                    case OsmGeoType.Node:
                         if (change.Id is long idNode)
                         {
                             if (nodes.TryGetValue(idNode, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
@@ -62,7 +65,7 @@ namespace OsmNightWatch
                             nodes[idNode] = null;
                         }
                         break;
-                    case OsmSharp.OsmGeoType.Way:
+                    case OsmGeoType.Way:
                         if (change.Id is long idWay)
                         {
                             if (ways.TryGetValue(idWay, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
@@ -70,7 +73,7 @@ namespace OsmNightWatch
                             ways[idWay] = null;
                         }
                         break;
-                    case OsmSharp.OsmGeoType.Relation:
+                    case OsmGeoType.Relation:
                         if (change.Id is long idRelation)
                         {
                             if (relations.TryGetValue(idRelation, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
@@ -83,9 +86,13 @@ namespace OsmNightWatch
                 }
             }
 
-            Nodes = nodes.ToDictionary(x => x.Key, x => x.Value == null ? null : new Node(x.Key, (double)x.Value.Latitude!, (double)x.Value.Longitude!, x.Value.Tags));
-            Ways = ways.ToDictionary(x => x.Key, x => x.Value == null ? null : new Way(x.Key, x.Value.Nodes, x.Value.Tags));
-            Relations = relations.ToDictionary(x => x.Key, x => x.Value == null ? null : new Relation(x.Key, x.Value.Members.Select(m => new RelationMember(m.Id, m.Role, (OsmGeoType)m.Type)).ToArray(), x.Value.Tags));
+            OsmNodes = nodes;
+            OsmWays = ways;
+            OsmRelations = relations;
+
+            Nodes = nodes.ToDictionary(x => x.Key, x => x.Value == null ? null : new PbfParsing.Node(x.Key, (double)x.Value.Latitude!, (double)x.Value.Longitude!, x.Value.Tags));
+            Ways = ways.ToDictionary(x => (uint)x.Key, x => x.Value == null ? null : new PbfParsing.Way(x.Key, x.Value.Nodes, x.Value.Tags));
+            Relations = relations.ToDictionary(x => (uint)x.Key, x => x.Value == null ? null : new PbfParsing.Relation(x.Key, x.Value.Members.Select(m => new PbfParsing.RelationMember(m.Id, m.Role, (PbfParsing.OsmGeoType)m.Type)).ToArray(), x.Value.Tags));
         }
     }
 }
