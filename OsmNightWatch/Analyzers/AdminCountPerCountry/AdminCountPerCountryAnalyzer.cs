@@ -75,7 +75,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
                 issueType += adminLevel;
             }
             yield return new IssueData() {
-                IssueType = "MissingCountry",
+                IssueType = issueType,
                 FriendlyName = name,
                 OsmType = "R",
                 OsmId = relationId
@@ -89,8 +89,8 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
             if (!country.IsValid)
             {
                 yield return new IssueData() {
-                    IssueType = "MissingCountry",
-                    FriendlyName = expectedCountry.EnglishName,
+                    IssueType = "AdminsState",
+                    FriendlyName = "Missing " + expectedCountry.EnglishName,
                     OsmType = "R",
                     OsmId = expectedCountry.RelationId
                 };
@@ -103,7 +103,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
                 foreach (var missingAdmin in expectedAdmins.Value.Except(actualAdmins))
                 {
                     yield return new IssueData() {
-                        IssueType = "MissingAdmin",
+                        IssueType = "AdminsState",
                         FriendlyName = expectedCountry.EnglishName + " lost " + missingAdmin,
                         OsmType = "R",
                         OsmId = missingAdmin
@@ -113,7 +113,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
                 foreach (var extraAdmin in actualAdmins.Except(expectedAdmins.Value))
                 {
                     yield return new IssueData() {
-                        IssueType = "ExtraAdmin",
+                        IssueType = "AdminsState",
                         FriendlyName = expectedCountry.EnglishName + " gained " + extraAdmin,
                         OsmType = "R",
                         OsmId = extraAdmin
@@ -145,7 +145,6 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
                 changedRelations.Add((uint)relation.Id);
             }
         }
-
         return UpdateRelations(changedRelations.Select(id => (id, newOsmSource.GetRelation(id))).ToArray(), newOsmSource);
     }
 

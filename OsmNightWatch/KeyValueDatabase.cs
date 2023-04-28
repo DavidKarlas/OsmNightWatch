@@ -38,14 +38,14 @@ namespace OsmNightWatch
             dataSource = dataSourceBuilder.Build();
         }
 
-        public async Task Initialize()
+        public void Initialize()
         {
             using (var comm = dataSource.CreateCommand("CREATE TABLE IF NOT EXISTS Admins (Id int PRIMARY KEY, FriendlyName text, AdminLevel int, geom GEOMETRY)"))
-                await comm.ExecuteNonQueryAsync();
+                comm.ExecuteNonQuery();
             using (var comm = dataSource.CreateCommand("CREATE INDEX IF NOT EXISTS admin_geom_index  ON admins  USING GIST (geom);"))
-                await comm.ExecuteNonQueryAsync();
+                comm.ExecuteNonQuery();
             //using (var comm = dataSource.CreateCommand("CREATE INDEX admin_level_index  ON admins  USING HASH (AdminLevel);"))
-            //    await comm.ExecuteNonQueryAsync();
+            //    comm.ExecuteNonQuery();
         }
 
         public void DeleteAdmin(long id)
@@ -59,7 +59,7 @@ namespace OsmNightWatch
 
         public void UpsertAdmin(long id, string friendlyName, int adminLevel, Geometry? polygon)
         {
-            using (var comm = dataSource.CreateCommand("INSERT INTO Admins (Id, FriendlyName, AdminLevel, geom) VALUES (@id, @adminLevel, @geom) ON CONFLICT (Id) DO UPDATE SET geom = @geom, FriendlyName = @friendlyName, AdminLevel = @adminLevel"))
+            using (var comm = dataSource.CreateCommand("INSERT INTO Admins (Id, FriendlyName, AdminLevel, geom) VALUES (@id, @friendlyName, @adminLevel, @geom) ON CONFLICT (Id) DO UPDATE SET geom = @geom, FriendlyName = @friendlyName, AdminLevel = @adminLevel"))
             {
                 comm.Parameters.AddWithValue("id", id);
                 comm.Parameters.AddWithValue("friendlyName", friendlyName);
@@ -230,6 +230,7 @@ namespace OsmNightWatch
                 {
                     var nodeId = ways.Key;
                     MemoryMarshal.Write(keyBuffer, ref nodeId);
+                    GetNodeToWay(nodeId, ways.Value);
                     var span = buffer;
                     foreach (var wayId in ways.Value)
                     {
@@ -243,6 +244,7 @@ namespace OsmNightWatch
                 {
                     var wayId = relations.Key;
                     MemoryMarshal.Write(keyBuffer, ref wayId);
+                    GetWayToRelation(wayId, relations.Value);
                     var span = buffer;
                     foreach (var relationId in relations.Value)
                     {
@@ -624,7 +626,7 @@ WHERE country.adminlevel=2 and adm.id in ({string.Join(",", relevantAdmins)})"))
             }
             var db = OpenDb(tx, "Tracker_NodeToWay");
             Span<byte> keyBuffer = stackalloc byte[8];
-            BinaryPrimitives.WriteInt64BigEndian(keyBuffer, nodeId);
+            MemoryMarshal.Write(keyBuffer, ref nodeId);
 
             var read = tx.Get(db, keyBuffer);
             if (read.resultCode == MDBResultCode.Success)
@@ -645,7 +647,7 @@ WHERE country.adminlevel=2 and adm.id in ({string.Join(",", relevantAdmins)})"))
             }
             var db = OpenDb(tx, "Tracker_WayToRelation");
             Span<byte> keyBuffer = stackalloc byte[4];
-            BinaryPrimitives.WriteUInt32BigEndian(keyBuffer, wayId);
+            MemoryMarshal.Write(keyBuffer, ref wayId);
 
             var read = tx.Get(db, keyBuffer);
             if (read.resultCode == MDBResultCode.Success)

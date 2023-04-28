@@ -18,7 +18,7 @@ Log("Hello");
 var path = @"C:\COSMOS\planet-230403.osm.pbf";
 
 using var database = new KeyValueDatabase(Path.GetFullPath("NightWatchDatabase"));
-await database.Initialize();
+database.Initialize();
 database.BeginTransaction();
 
 var index = PbfIndexBuilder.BuildIndex(path);
@@ -45,18 +45,18 @@ else
     database.AbortTransaction();
 }
 IReplicationDiffEnumerator enumerator = new CatchupReplicationDiffEnumerator((DateTime)currentTimeStamp);
-IssuesData? oldIssuesData = await IssuesUploader.DownloadAsync();
+IssuesData? oldIssuesData = IssuesUploader.Download();
 
 
 while (true)
 {
-    var replicationState = await GetNextState(enumerator);
+    var replicationState = GetNextState();
 
 retry:
     try
     {
         Log($"Downloading changeset '{replicationState.EndTimestamp}'.");
-        var changeset = await DownloadChangeset(replicationState.Config, replicationState.SequenceNumber);
+        var changeset = DownloadChangeset(replicationState.Config, replicationState.SequenceNumber);
 
         database.BeginTransaction();
 
@@ -70,11 +70,12 @@ retry:
 
         newIssuesData.SetTimestampsAndLastKnownGood(oldIssuesData);
         oldIssuesData = newIssuesData;
-        await UploadIssues(replicationState, newIssuesData);
+        UploadIssues(replicationState, newIssuesData);
         database.CommitTransaction();
     }
-    catch (Exception)
+    catch (Exception ex)
     {
+        Log(ex.ToString());
         database.AbortTransaction();
         goto retry;
     }
@@ -85,19 +86,19 @@ static void Log(string message)
     Console.WriteLine(DateTime.Now.ToString("s") + ": " + message);
 }
 
-async Task<ReplicationState> GetNextState(IReplicationDiffEnumerator enumerator)
+ReplicationState GetNextState()
 {
     while (true)
     {
         try
         {
-            if (await enumerator.MoveNext() == false)
+            if (enumerator.MoveNext().Result == false)
             {
                 Log($"Failed to iterate enumerator... Sleeping 1 minute.");
-                await Task.Delay(TimeSpan.FromMinutes(1));
+                Task.Delay(TimeSpan.FromMinutes(1)).Wait();
                 if (enumerator.State.Config.Period == ReplicationConfig.Minutely.Period && enumerator is CatchupReplicationDiffEnumerator)
                 {
-                    enumerator = await ReplicationConfig.Minutely.GetDiffEnumerator(enumerator.State.SequenceNumber);
+                    enumerator = ReplicationConfig.Minutely.GetDiffEnumerator(enumerator.State.SequenceNumber).Result;
                 }
                 continue;
             }
@@ -111,7 +112,7 @@ async Task<ReplicationState> GetNextState(IReplicationDiffEnumerator enumerator)
         if (replicationState is null)
         {
             Log($"Enumerator returned null state, sleeping 1 minute.");
-            await Task.Delay(TimeSpan.FromMinutes(1));
+            Task.Delay(TimeSpan.FromMinutes(1)).Wait();
             continue;
         }
         return replicationState;
@@ -123,7 +124,7 @@ string DiffUrl(ReplicationConfig config, string filePath)
     return new Uri(new Uri(config.Url), filePath).ToString();
 }
 
-async Task<OsmChange> DownloadChangeset(ReplicationConfig config, long sequenceNumber)
+OsmChange DownloadChangeset(ReplicationConfig config, long sequenceNumber)
 {
     bool ignoreCache = false;
     while (true)
@@ -137,8 +138,8 @@ async Task<OsmChange> DownloadChangeset(ReplicationConfig config, long sequenceN
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(cachePath));
                 using FileStream fsw = File.Create(cachePath);
-                using Stream stream = await httpClient.GetStreamAsync(url);
-                await stream.CopyToAsync(fsw);
+                using Stream stream = httpClient.GetStreamAsync(url).Result;
+                stream.CopyTo(fsw);
             }
             Log("Deserializing changeset...");
             using FileStream fs = File.OpenRead(cachePath);
@@ -170,14 +171,14 @@ static string ReplicationFilePath(long sequenceNumber)
     return filePath;
 }
 
-static async Task UploadIssues(ReplicationState replicationState, IssuesData newIssuesData)
+static void UploadIssues(ReplicationState replicationState, IssuesData newIssuesData)
 {
     // Only do uploading on changesets that are newer than 5 minutes
     if (replicationState.EndTimestamp.AddMinutes(5) > DateTime.UtcNow)
     {
         try
         {
-            await IssuesUploader.UploadAsync(newIssuesData);
+            IssuesUploader.Upload(newIssuesData);
         }
         catch (Exception ex)
         {
