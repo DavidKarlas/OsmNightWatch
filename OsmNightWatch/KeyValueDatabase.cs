@@ -10,6 +10,7 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 
 namespace OsmNightWatch
 {
@@ -191,8 +192,7 @@ namespace OsmNightWatch
                 Span<byte> buffer = stackalloc byte[4 * 256];
                 foreach (var ways in tracker.NodeToWay.OrderBy(n => n.Key))
                 {
-                    var nodeId = ways.Key;
-                    MemoryMarshal.Write(keyBuffer, ref nodeId);
+                    BinaryPrimitives.WriteInt64BigEndian(keyBuffer, ways.Key);
                     var span = buffer;
                     foreach (var wayId in ways.Value)
                     {
@@ -204,8 +204,7 @@ namespace OsmNightWatch
                 keyBuffer = stackalloc byte[4];
                 foreach (var relations in tracker.WayToRelation.OrderBy(w => w.Key))
                 {
-                    var wayId = relations.Key;
-                    MemoryMarshal.Write(keyBuffer, ref wayId);
+                    BinaryPrimitives.WriteUInt32BigEndian(keyBuffer, relations.Key);
                     var span = buffer;
                     foreach (var relationId in relations.Value)
                     {
@@ -217,8 +216,7 @@ namespace OsmNightWatch
                 keyBuffer = stackalloc byte[4];
                 foreach (var relation in tracker.Relations.OrderBy(n => n))
                 {
-                    var relationId = relation;
-                    MemoryMarshal.Write(keyBuffer, ref relationId);
+                    BinaryPrimitives.WriteUInt32BigEndian(keyBuffer, relation);
                     tx.Put(db, keyBuffer, keyBuffer, PutOptions.AppendData);
                 }
             }
@@ -228,9 +226,8 @@ namespace OsmNightWatch
                 Span<byte> buffer = stackalloc byte[4 * 256];
                 foreach (var ways in tracker.NodeToWay)
                 {
-                    var nodeId = ways.Key;
-                    MemoryMarshal.Write(keyBuffer, ref nodeId);
-                    GetNodeToWay(nodeId, ways.Value);
+                    BinaryPrimitives.WriteInt64BigEndian(keyBuffer, ways.Key);
+                    GetNodeToWay(ways.Key, ways.Value);
                     var span = buffer;
                     foreach (var wayId in ways.Value)
                     {
@@ -242,9 +239,8 @@ namespace OsmNightWatch
                 keyBuffer = stackalloc byte[4];
                 foreach (var relations in tracker.WayToRelation)
                 {
-                    var wayId = relations.Key;
-                    MemoryMarshal.Write(keyBuffer, ref wayId);
-                    GetWayToRelation(wayId, relations.Value);
+                    BinaryPrimitives.WriteUInt32BigEndian(keyBuffer, relations.Key);
+                    GetWayToRelation(relations.Key, relations.Value);
                     var span = buffer;
                     foreach (var relationId in relations.Value)
                     {
@@ -256,8 +252,7 @@ namespace OsmNightWatch
                 keyBuffer = stackalloc byte[4];
                 foreach (var relation in tracker.Relations)
                 {
-                    var relationId = relation;
-                    MemoryMarshal.Write(keyBuffer, ref relationId);
+                    BinaryPrimitives.WriteUInt32BigEndian(keyBuffer, relation);
                     tx.Put(db, keyBuffer, keyBuffer);
                 }
             }
@@ -280,7 +275,7 @@ namespace OsmNightWatch
             var cursor = tx.CreateCursor(db);
             foreach (var entry in cursor.AsEnumerable())
             {
-                tracker.PersistentRelations.Add(MemoryMarshal.Read<uint>(entry.Item1.AsSpan()));
+                tracker.PersistentRelations.Add(BinaryPrimitives.ReadUInt32BigEndian(entry.Item1.AsSpan()));
             }
             return tracker;
         }
@@ -626,7 +621,7 @@ WHERE country.adminlevel=2 and adm.id in ({string.Join(",", relevantAdmins)})"))
             }
             var db = OpenDb(tx, "Tracker_NodeToWay");
             Span<byte> keyBuffer = stackalloc byte[8];
-            MemoryMarshal.Write(keyBuffer, ref nodeId);
+            BinaryPrimitives.WriteInt64BigEndian(keyBuffer, nodeId);
 
             var read = tx.Get(db, keyBuffer);
             if (read.resultCode == MDBResultCode.Success)
@@ -647,7 +642,7 @@ WHERE country.adminlevel=2 and adm.id in ({string.Join(",", relevantAdmins)})"))
             }
             var db = OpenDb(tx, "Tracker_WayToRelation");
             Span<byte> keyBuffer = stackalloc byte[4];
-            MemoryMarshal.Write(keyBuffer, ref wayId);
+            BinaryPrimitives.WriteUInt32BigEndian(keyBuffer, wayId);
 
             var read = tx.Get(db, keyBuffer);
             if (read.resultCode == MDBResultCode.Success)
