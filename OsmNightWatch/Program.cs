@@ -1,21 +1,20 @@
 ﻿using OsmNightWatch;
 using OsmNightWatch.Analyzers;
 using OsmNightWatch.Analyzers.AdminCountPerCountry;
+using OsmNightWatch.Analyzers.BrokenCoastline;
 using OsmNightWatch.Lib;
 using OsmNightWatch.PbfParsing;
 using OsmSharp.Changesets;
-using OsmSharp.IO.PBF;
 using OsmSharp.Replication;
-using System.Diagnostics;
 using System.IO.Compression;
 using System.Xml.Serialization;
 
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
 
-Log("Hello");
+Log("Hello world");
 
-var path = @"C:\COSMOS\planet-230403.osm.pbf";
+var path = @"C:\COSMOS\planet-230424.osm.pbf";
 
 using var database = new KeyValueDatabase(Path.GetFullPath("NightWatchDatabase"));
 database.Initialize();
@@ -24,7 +23,8 @@ database.BeginTransaction();
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
 var analyzers = new IOsmAnalyzer[] {
-    new AdminCountPerCountryAnalyzer(database)
+    new AdminCountPerCountryAnalyzer(database),
+    new BrokenCoastlineAnalyzer(database)
 };
 
 var dbWithChanges = new OsmDatabaseWithReplicationData(pbfDb, database);

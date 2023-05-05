@@ -6,6 +6,7 @@ using Npgsql;
 using OsmNightWatch.Analyzers.AdminCountPerCountry;
 using OsmNightWatch.PbfParsing;
 using OsmSharp.Tags;
+using System;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Diagnostics;
@@ -519,84 +520,6 @@ WHERE country.adminlevel=2 and adm.id in ({string.Join(",", relevantAdmins)})"))
             }
         }
 
-        internal void Playground()
-        {
-            var sw3 = Stopwatch.StartNew();
-            var countries = new Dictionary<long, PreparedPolygon>();
-            var dict = new Dictionary<long, int>();
-            var strs = new Dictionary<int, STRtree<long>>();
-            using (var comm = dataSource.CreateCommand("SELECT id, adminlevel, geom AS Envelope from admins"))
-            {
-                using (var reader = comm.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        var id = reader.GetInt64(0);
-                        var adminLevel = reader.GetInt32(1);
-                        var envelope = (Geometry)reader.GetValue(2);
-                        dict.Add(id, adminLevel);
-                        if (!strs.TryGetValue(adminLevel, out var str))
-                            strs[adminLevel] = str = new();
-                        PreparedPolygon e2 = null;
-                        if (adminLevel == 2)
-                        {
-                            e2 = new PreparedPolygon((IPolygonal)envelope);
-                            countries.Add(id, e2);
-                        }
-                        str.Insert(envelope.EnvelopeInternal, id);
-                    }
-                }
-            }
-            Console.WriteLine(sw3.Elapsed);
-            foreach (var str in strs)
-            {
-                var sw = Stopwatch.StartNew();
-                str.Value.Build();
-                sw.Stop();
-                Console.WriteLine(str.Key + " " + sw.Elapsed);
-            }
-            Console.WriteLine(dict.Count);
-            Console.WriteLine(GC.GetTotalMemory(true) / (1024.0 * 1024));
-            sw3.Restart();
-            var candidates = new List<long>();
-            var country = countries[365331];
-            foreach (var candidate in strs[6].Query(country.Geometry.EnvelopeInternal))
-            {
-                candidates.Add(candidate);
-            }
-            Console.WriteLine(sw3.Elapsed);
-            for (int i = 0; i < 5; i++)
-            {
-                sw3.Restart();
-                var result = new ConcurrentBag<long>();
-                var polies = new List<(long Id, Geometry Poly)>();
-                using (var comm = dataSource.CreateCommand("SELECT id, geom from admins where id in (" + string.Join(",", candidates) + ")"))
-                {
-                    using (var reader = comm.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            var id = reader.GetInt64(0);
-                            var geom = (Geometry)reader.GetValue(1);
-                            polies.Add((id, geom));
-                        }
-                    }
-                }
-                sw3.Stop();
-                Console.WriteLine(i + " " + sw3.Elapsed);
-                Console.WriteLine(polies.Count);
-                sw3.Restart();
-                var result2 = Parallel.ForEach(polies, new ParallelOptions() { MaxDegreeOfParallelism = 24 }, (p) => {
-                    if (country.Overlaps(p.Poly))
-                        result.Add(p.Id);
-                });
-                sw3.Stop();
-                Console.WriteLine(i + " " + sw3.Elapsed);
-                Console.WriteLine(result.Count);
-            }
-            Console.WriteLine(GC.GetTotalMemory(true) / (1024.0 * 1024));
-        }
-
         public bool DoesCountryExist(long relationId)
         {
             using (var comm = dataSource.CreateCommand("SELECT id FROM admins WHERE id=@relationId AND adminlevel=2 and geom IS NOT NULL"))
@@ -668,6 +591,66 @@ WHERE country.adminlevel=2 and adm.id in ({string.Join(",", relevantAdmins)})"))
                     }
                 }
             }
+        }
+
+        internal void StoreCoastline(Dictionary<long, Way?> coastlineWays)
+        {
+            if (transaction is not LightningTransaction tx)
+            {
+                throw new InvalidOperationException("Transaction not started!");
+            }
+            var db = OpenDb(tx, "CoastlineWays");
+            Span<byte> keyBuffer = stackalloc byte[8];
+            Span<byte> originalBuffer = stackalloc byte[128 * 1024];
+            foreach (var element in coastlineWays)
+            {
+                BinaryPrimitives.WriteInt64BigEndian(keyBuffer, element.Key);
+                if (element.Value == null)
+                {
+                    tx.Delete(db, keyBuffer);
+                }
+                else
+                {
+                    var buffer = originalBuffer;
+                    BinSerialize.WriteUShort(ref buffer, (ushort)element.Value.Nodes.Length);
+                    foreach (var nodeId in element.Value.Nodes)
+                    {
+                        BinSerialize.WriteLong(ref buffer, nodeId);
+                    }
+                    WriteTags(ref buffer, element.Value.Tags);
+                    tx.Put(db, keyBuffer, originalBuffer.Slice(0, originalBuffer.Length - buffer.Length));
+                }
+            }
+        }
+
+        internal Dictionary<long, Way> LoadCoastline()
+        {
+            var coastlineWays = new Dictionary<long, Way>();
+            if (transaction is not LightningTransaction tx)
+            {
+                throw new InvalidOperationException("Transaction not started!");
+            }
+            var db = OpenDb(tx, "CoastlineWays");
+            Span<byte> keyBuffer = stackalloc byte[8];
+            var cursor = tx.CreateCursor(db);
+            foreach (var entry in cursor.AsEnumerable())
+            {
+                var key = BinaryPrimitives.ReadInt64BigEndian(entry.Item1.AsSpan());
+                var buffer = entry.Item2.AsSpan();
+                if (buffer.Length == 0)
+                {
+                    throw new Exception("How did lenght=0 end up in CoastlineWays?");
+                }
+                int numberOfNodes = BinSerialize.ReadUShort(ref buffer);
+                var nodes = new long[numberOfNodes];
+                for (int i = 0; i < numberOfNodes; i++)
+                {
+                    nodes[i] = BinSerialize.ReadLong(ref buffer);
+                }
+                var tags = ReadTags(ref buffer);
+                coastlineWays.Add(key, new Way(key, nodes, tags));
+            }
+            return coastlineWays;
         }
     }
 }
