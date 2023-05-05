@@ -104,7 +104,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
                 {
                     yield return new IssueData() {
                         IssueType = "AdminsState",
-                        FriendlyName = expectedCountry.EnglishName + " lost " + missingAdmin,
+                        FriendlyName = $"{expectedCountry.EnglishName}({expectedAdmins.Key}) lost {missingAdmin}",
                         OsmType = "R",
                         OsmId = missingAdmin
                     };
@@ -114,7 +114,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
                 {
                     yield return new IssueData() {
                         IssueType = "AdminsState",
-                        FriendlyName = expectedCountry.EnglishName + " gained " + extraAdmin,
+                        FriendlyName = $"{expectedCountry.EnglishName}({expectedAdmins.Key}) gained {extraAdmin}",
                         OsmType = "R",
                         OsmId = extraAdmin
                     };
