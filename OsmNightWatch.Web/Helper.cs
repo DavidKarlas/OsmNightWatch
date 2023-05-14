@@ -1,4 +1,6 @@
-﻿namespace OsmNightWatch.Web
+﻿using OsmNightWatch.Web.Pages;
+
+namespace OsmNightWatch.Web
 {
     public class Helper
     {
@@ -7,13 +9,16 @@
             ("OpenAdminPolygon7", "Open admins level 7","/OpenAdminPolygons/7" ),
             ("OpenAdminPolygon8","Open admins level 8", "/OpenAdminPolygons/8" ),
             //("OpenAdminPolygon9","Open  admins level 9.", "/OpenAdminPolygons/9" ),
-            //("OpenAdminPolygon10", "Open  admins level 10.","/OpenAdminPolygons/10" ),
-            ("BrokenCoastLine", "Broken coastlines","/BrokenWaterCoastlines" )
+            //("OpenAdminPolygon10", "Open  admins level 10.","/OpenAdminPolygons/10" ),    
+            ("BrokenCoastLine", "Broken coastlines","/BrokenWaterCoastlines" ),
+            ("AdminsState", "Admins State","/AdminsState" ),
+            ("MissingWays","Admins without ways", "/AdminsWithoutWays" )
+            
         };
 
         public static string ConvertToFullOsmType(string osmType)
         {
-            switch(osmType)
+            switch (osmType)
             {
                 case "N":
                     return "node";
