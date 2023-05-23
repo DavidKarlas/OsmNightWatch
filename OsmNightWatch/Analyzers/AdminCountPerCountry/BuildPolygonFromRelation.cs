@@ -7,7 +7,7 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
 {
     public static class BuildPolygonFromRelation
     {
-        public static (Geometry Polygon, List<Way> Ways) BuildPolygon(Relation relation, IOsmGeoSource newOsmSource)
+        public static (Geometry Polygon, List<Way> Ways, string? reason) BuildPolygon(Relation relation, IOsmGeoSource newOsmSource)
         {
             var result = InternalBuildPolygon(relation, newOsmSource);
             if (result.Polygon == MultiPolygon.Empty)
@@ -16,10 +16,10 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
             {
                 if (result.Polygon.Geometries.Length == 1)
                 {
-                    return (result.Polygon.Geometries[0], result.Ways);
+                    return (result.Polygon.Geometries[0], result.Ways, null);
                 }
                 var unionizedPolygon = CascadedPolygonUnion.Union(result.Polygon.Geometries);
-                return (unionizedPolygon, result.Ways);
+                return (unionizedPolygon, result.Ways, null);
             }
             catch
             {
@@ -27,24 +27,42 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
             }
         }
 
-        private static (MultiPolygon Polygon, List<Way> Ways) InternalBuildPolygon(Relation relation, IOsmGeoSource newOsmSource)
+        private static (MultiPolygon Polygon, List<Way> Ways, string? reason) InternalBuildPolygon(Relation relation, IOsmGeoSource newOsmSource)
         {
             var innerWays = new List<Way>();
             var outerWays = new List<Way>();
-
+            bool atLeastOneWay = false;
             foreach (var member in relation.Members)
             {
                 switch (member.Role)
                 {
                     case "inner":
                         if (member.Type == OsmGeoType.Way)
+                        {
+                            atLeastOneWay = true;
                             innerWays.Add(newOsmSource.GetWay(member.Id));
+                        }
                         break;
                     case "outer":
                         if (member.Type == OsmGeoType.Way)
+                        {
+                            atLeastOneWay = true;
                             outerWays.Add(newOsmSource.GetWay(member.Id));
+                        }
                         break;
+                    case "":
+                        return (MultiPolygon.Empty, new List<Way>(0), "Member without role");
                 }
+            }
+
+            if (!atLeastOneWay)
+            {
+                return (MultiPolygon.Empty, new List<Way>(0), "Missing ways");
+            }
+
+            if (outerWays.Count == 0)
+            {
+                return (MultiPolygon.Empty, new List<Way>(0), "No outer ways found");
             }
             try
             {
@@ -59,7 +77,22 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
                     }
                     outerPolygonizer.Add(new LineString(array.ToArray()));
                 }
+
+                if(outerPolygonizer.GetInvalidRingLines().Count > 0)
+                {
+                    return (MultiPolygon.Empty, outerWays, "Outer ways have invalid ring lines.");
+                }
+
                 var outerPolygons = outerPolygonizer.GetPolygons().OfType<Polygon>().ToArray();
+                if (outerPolygons.Length == 0)
+                {
+                    return (MultiPolygon.Empty, outerWays, "Polygon is broken.");
+                }
+
+                if (outerPolygonizer.GetDangles().Count > 0)
+                {
+                    return (MultiPolygon.Empty, outerWays, "Outer ways have unused sections.");
+                }
 
                 if (innerWays.Count > 0)
                 {
@@ -67,6 +100,16 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
                     foreach (var innerWay in innerWays)
                     {
                         innerPolygonizer.Add(new LineString(innerWay.Nodes.Select(x => newOsmSource.GetNode(x).ToCoordinate()).ToArray()));
+                    }
+
+                    if (innerPolygonizer.GetInvalidRingLines().Count > 0)
+                    {
+                        return (MultiPolygon.Empty, outerWays, "Inner ways have invalid ring lines.");
+                    }
+
+                    if (innerPolygonizer.GetDangles().Count > 0)
+                    {
+                        return (MultiPolygon.Empty, outerWays, "Inner ways have unused sections.");
                     }
 
                     for (int i = 0; i < outerPolygons.Length; i++)
@@ -84,14 +127,13 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
                     }
                 }
                 outerWays.AddRange(innerWays);
-                return (new MultiPolygon(outerPolygons), outerWays);
+                return (new MultiPolygon(outerPolygons), outerWays, null);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                //TODO, add exception message to Issue description
+                outerWays.AddRange(innerWays);
+                return (MultiPolygon.Empty, outerWays, ex.Message);
             }
-            outerWays.AddRange(innerWays);
-            return (MultiPolygon.Empty, outerWays);
         }
     }
 }

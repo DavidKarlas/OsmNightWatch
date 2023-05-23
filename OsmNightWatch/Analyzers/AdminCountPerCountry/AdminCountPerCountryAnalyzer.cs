@@ -41,9 +41,27 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
                 database.DeleteAdmin(admin.Id);
                 return;
             }
-            var polygon = BuildPolygonFromRelation.BuildPolygon(admin.Relation, newOsmSource);
-            relationChangesTracker.AddRelation(admin.Id, polygon.Ways);
-            var geom = polygon.Polygon.IsEmpty || !polygon.Polygon.IsValid ? null : polygon.Polygon;
+            var result = BuildPolygonFromRelation.BuildPolygon(admin.Relation, newOsmSource);
+            relationChangesTracker.AddRelation(admin.Id, result.Ways);
+            NetTopologySuite.Geometries.Geometry? geom;
+            if (result.reason != null)
+            {
+                geom = null;
+            }
+            else if (result.Polygon.IsEmpty)
+            {
+                geom = null;
+                result.reason = "Polygon is broken.";
+            }
+            else if (!result.Polygon.IsValid)
+            {
+                geom = null;
+                result.reason = "Polygon is not valid.";
+            }
+            else
+            {
+                geom = result.Polygon;
+            }
             if (!admin.Relation.Tags.TryGetValue("name:en", out var friendlyName))
             {
                 if (!admin.Relation.Tags.TryGetValue("name", out friendlyName))
@@ -51,12 +69,14 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
                     friendlyName = "";
                 }
             }
-            database.UpsertAdmin(admin.Id, friendlyName, int.Parse(admin.Relation.Tags!["admin_level"]), geom);
+            database.UpsertAdmin(admin.Id, friendlyName, int.Parse(admin.Relation.Tags!["admin_level"]), geom, result.reason);
         });
 
         database.WriteRelationChangesTracker(relationChangesTracker);
 
-        var expectedState = JsonSerializer.Deserialize<StateOfTheAdmins>(new HttpClient().GetStringAsync("https://davidupload.blob.core.windows.net/data/current2.json").Result);
+        var expectedState = JsonSerializer.Deserialize<StateOfTheAdmins>(new HttpClient().GetStringAsync("https://davidupload.blob.core.windows.net/data/current2.json").Result, new JsonSerializerOptions() {
+            ReadCommentHandling = JsonCommentHandling.Skip
+        });
 
         if (currentState == null)
         {
@@ -67,19 +87,36 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
             currentState = UpdateCurrentState(currentState, relevantThings);
         }
 
-        foreach (var (relationId, name, adminLevel) in database.GetBrokenAdmins())
+        foreach (var (relationId, name, adminLevel, reason) in database.GetBrokenAdmins())
         {
-            var issueType = "OpenAdminPolygon";
-            if (adminLevel > 6)
+            if (reason == "Missing ways")
             {
-                issueType += adminLevel;
+                // Special handling for relations without ways
+                // that are often in Africa where relation consists of places nodes
+                // we can't fix them because no source for borders but also don't want
+                // to delete in OSM, but want to keep track...
+                yield return new IssueData() {
+                    IssueType = "MissingWays",
+                    FriendlyName = $"{name}({adminLevel})",
+                    OsmType = "R",
+                    OsmId = relationId
+                };
             }
-            yield return new IssueData() {
-                IssueType = issueType,
-                FriendlyName = name,
-                OsmType = "R",
-                OsmId = relationId
-            };
+            else
+            {
+                var issueType = "OpenAdminPolygon";
+                if (adminLevel > 6)
+                {
+                    issueType += adminLevel;
+                }
+                yield return new IssueData() {
+                    IssueType = issueType,
+                    FriendlyName = name,
+                    OsmType = "R",
+                    OsmId = relationId,
+                    Details = reason
+                };
+            }
         }
 
         var currentCountries = currentState.Countries.ToDictionary(c => c.RelationId);
@@ -173,7 +210,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
             }
         }
 
-        foreach (var (CountryId, adminLevel) in database.GetCountryAndLevelForAdmins(relevantThings.Select((i) => i.Id).Except(countries.Keys).ToList()))
+        foreach (var (CountryId, adminLevel) in database.GetCountryAndLevelForAdmins(relevantThings.Select((i) => i.Id).Except(countries.Keys).ToList(), countries.Keys.ToList()))
         {
             thingsThatNeedReevaluation.Add(((uint)CountryId, adminLevel));
         }

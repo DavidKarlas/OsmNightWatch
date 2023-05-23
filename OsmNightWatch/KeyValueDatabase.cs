@@ -42,7 +42,7 @@ namespace OsmNightWatch
 
         public void Initialize()
         {
-            using (var comm = dataSource.CreateCommand("CREATE TABLE IF NOT EXISTS Admins (Id int PRIMARY KEY, FriendlyName text, AdminLevel int, geom GEOMETRY)"))
+            using (var comm = dataSource.CreateCommand("CREATE TABLE IF NOT EXISTS Admins (Id int PRIMARY KEY, FriendlyName text, AdminLevel int, geom GEOMETRY, Reason text)"))
                 comm.ExecuteNonQuery();
             using (var comm = dataSource.CreateCommand("CREATE INDEX IF NOT EXISTS admin_geom_index  ON admins  USING GIST (geom);"))
                 comm.ExecuteNonQuery();
@@ -59,14 +59,15 @@ namespace OsmNightWatch
             }
         }
 
-        public void UpsertAdmin(long id, string friendlyName, int adminLevel, Geometry? polygon)
+        public void UpsertAdmin(long id, string friendlyName, int adminLevel, Geometry? polygon, string? reason)
         {
-            using (var comm = dataSource.CreateCommand("INSERT INTO Admins (Id, FriendlyName, AdminLevel, geom) VALUES (@id, @friendlyName, @adminLevel, @geom) ON CONFLICT (Id) DO UPDATE SET geom = @geom, FriendlyName = @friendlyName, AdminLevel = @adminLevel"))
+            using (var comm = dataSource.CreateCommand("INSERT INTO Admins (Id, FriendlyName, AdminLevel, geom, reason) VALUES (@id, @friendlyName, @adminLevel, @geom, @reason) ON CONFLICT (Id) DO UPDATE SET geom = @geom, FriendlyName = @friendlyName, AdminLevel = @adminLevel, Reason = @reason"))
             {
                 comm.Parameters.AddWithValue("id", id);
                 comm.Parameters.AddWithValue("friendlyName", friendlyName);
                 comm.Parameters.AddWithValue("adminLevel", adminLevel);
                 comm.Parameters.AddWithValue("geom", NpgsqlTypes.NpgsqlDbType.Geometry, polygon ?? (object)DBNull.Value);
+                comm.Parameters.AddWithValue("reason", NpgsqlTypes.NpgsqlDbType.Text, reason ?? (object)DBNull.Value);
                 comm.ExecuteNonQuery();
             }
         }
@@ -496,7 +497,7 @@ namespace OsmNightWatch
         }
 
 
-        public List<(long CountryId, int adminLevel)> GetCountryAndLevelForAdmins(List<uint> relevantAdmins)
+        public List<(long CountryId, int adminLevel)> GetCountryAndLevelForAdmins(List<uint> relevantAdmins, List<uint> allCountries)
         {
             if (relevantAdmins.Count == 0)
                 return new List<(long, int)>();
@@ -505,7 +506,7 @@ SELECT country.id, adm.adminlevel
 FROM admins adm
 INNER JOIN admins country ON 
    (country.geom && adm.geom AND ST_Relate(country.geom, adm.geom, '2********'))
-WHERE country.adminlevel=2 and adm.id in ({string.Join(",", relevantAdmins)})"))
+WHERE country.id in ({string.Join(",", allCountries)}) and adm.id in ({string.Join(",", relevantAdmins)})"))
             {
                 comm.CommandTimeout = 120;
                 using var reader = comm.ExecuteReader();
@@ -522,7 +523,7 @@ WHERE country.adminlevel=2 and adm.id in ({string.Join(",", relevantAdmins)})"))
 
         public bool DoesCountryExist(long relationId)
         {
-            using (var comm = dataSource.CreateCommand("SELECT id FROM admins WHERE id=@relationId AND adminlevel=2 and geom IS NOT NULL"))
+            using (var comm = dataSource.CreateCommand("SELECT id FROM admins WHERE id=@relationId and geom IS NOT NULL"))
             {
                 comm.Parameters.AddWithValue("@relationId", relationId);
                 using var reader = comm.ExecuteReader();
@@ -578,16 +579,16 @@ WHERE country.adminlevel=2 and adm.id in ({string.Join(",", relevantAdmins)})"))
             }
         }
 
-        public IEnumerable<(long RelationId, string name, int adminLevel)> GetBrokenAdmins()
+        public IEnumerable<(long RelationId, string name, int adminLevel, string reason)> GetBrokenAdmins()
         {
 
-            using (var comm = dataSource.CreateCommand("SELECT id, friendlyname, adminlevel FROM admins WHERE geom IS NULL"))
+            using (var comm = dataSource.CreateCommand("SELECT id, friendlyname, adminlevel, reason FROM admins WHERE geom IS NULL"))
             {
                 using var reader = comm.ExecuteReader();
                 {
                     while (reader.Read())
                     {
-                        yield return (reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2));
+                        yield return (reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2), reader.GetString(3));
                     }
                 }
             }

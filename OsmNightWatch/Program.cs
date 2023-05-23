@@ -14,7 +14,7 @@ ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSeriali
 
 Log("Hello world");
 
-var path = @"C:\COSMOS\planet-230424.osm.pbf";
+var path = @"C:\COSMOS\planet-230508.osm.pbf";
 
 using var database = new KeyValueDatabase(Path.GetFullPath("NightWatchDatabase"));
 database.Initialize();
@@ -34,10 +34,15 @@ if (currentTimeStamp == null)
     foreach (var analyzer in analyzers)
     {
         var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings).ToArray();
-        Console.WriteLine(analyzer.ProcessPbf(relevantThings, dbWithChanges).Count());
+        Log($"Starting {analyzer.AnalyzerName}...");
+        var issues = analyzer.ProcessPbf(relevantThings, dbWithChanges);
+        Log($"Found {issues.Count()} issues.");
     }
+    Log("Storing relevant elements into LMDB.");
     dbWithChanges.StoreCache();
+    Log("Finished storing relevant elements into LMDB.");
     database.CommitTransaction();
+    Log("Committed transaction.");
     currentTimeStamp = Utils.GetLatestTimestampFromPbf(index);
 }
 else
