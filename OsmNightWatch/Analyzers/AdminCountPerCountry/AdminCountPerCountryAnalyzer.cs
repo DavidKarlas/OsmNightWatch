@@ -182,6 +182,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
                 changedRelations.Add((uint)relation.Id);
             }
         }
+        //changedRelations.Add(3286892);// for testing specific relation build polygon logic
         return UpdateRelations(changedRelations.Select(id => (id, newOsmSource.GetRelation(id))).ToArray(), newOsmSource);
     }
 

@@ -66,8 +66,8 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
             }
             try
             {
-                var outerPolygonizer = new Polygonizer();
-                foreach (var outerWay in outerWays)
+                var outerPolygonizer = new PolygonizeGraph(GeometryFactory.Default);
+                foreach (var outerWay in outerWays.Concat(innerWays))
                 {
                     var array = new Coordinate[outerWay.Nodes.Length];
                     for (int i = 0; i < outerWay.Nodes.Length; i++)
@@ -75,24 +75,33 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
                         var node = newOsmSource.GetNode(outerWay.Nodes[i]);
                         array[i] = node.ToCoordinate();
                     }
-                    outerPolygonizer.Add(new LineString(array.ToArray()));
+                    outerPolygonizer.AddEdge(new LineString(array.ToArray()));
                 }
 
-                if(outerPolygonizer.GetInvalidRingLines().Count > 0)
+                if (outerPolygonizer.DeleteDangles().Any())
                 {
-                    return (MultiPolygon.Empty, outerWays, "Outer ways have invalid ring lines.");
+                    return (MultiPolygon.Empty, outerWays, "Some outer ways are unused.");
+                }
+                if (outerPolygonizer.DeleteCutEdges().Any())
+                {
+                    return (MultiPolygon.Empty, outerWays, "Some outer ways form cut edges.");
+                }
+                var outerRings = outerPolygonizer.GetEdgeRings().ToArray();
+                if (outerRings.Any(edge => !edge.IsValid))
+                {
+                    return (MultiPolygon.Empty, outerWays, "Some outer ways form invalid rings.");
                 }
 
-                var outerPolygons = outerPolygonizer.GetPolygons().OfType<Polygon>().ToArray();
+                var outerPolygons = outerRings.Where(er => { er.ComputeHole(); return !er.IsHole; }).Select(edge => edge.Polygon).ToArray();
+                if (outerPolygons.Any(p => !p.IsValid))
+                {
+                    return (MultiPolygon.Empty, outerWays, "Invalid polygon.");
+                }
                 if (outerPolygons.Length == 0)
                 {
-                    return (MultiPolygon.Empty, outerWays, "Polygon is broken.");
+                    return (MultiPolygon.Empty, outerWays, "No valid polygon found.");
                 }
 
-                if (outerPolygonizer.GetDangles().Count > 0)
-                {
-                    return (MultiPolygon.Empty, outerWays, "Outer ways have unused sections.");
-                }
 
                 if (innerWays.Count > 0)
                 {
