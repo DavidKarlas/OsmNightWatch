@@ -67,7 +67,7 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
             try
             {
                 var outerPolygonizer = new PolygonizeGraph(GeometryFactory.Default);
-                foreach (var outerWay in outerWays.Concat(innerWays))
+                foreach (var outerWay in outerWays)
                 {
                     var array = new Coordinate[outerWay.Nodes.Length];
                     for (int i = 0; i < outerWay.Nodes.Length; i++)
