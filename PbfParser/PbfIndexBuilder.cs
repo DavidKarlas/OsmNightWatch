@@ -25,12 +25,7 @@ namespace OsmNightWatch.PbfParsing
             }
             Console.WriteLine("Building PbfIndex...");
             var file = File.Open(pbfPath, FileMode.Open, FileAccess.Read, FileShare.Read);
-
-#if DEBUG
-            var slimSemaphore = new SemaphoreSlim(1);
-#else
             var slimSemaphore = new SemaphoreSlim(24);
-#endif
             ReadHeader(file);
             var nodesBag = new ConcurrentBag<(long FirstNodeId, long FileOffset)>();
             var waysBag = new ConcurrentBag<(long FirstWayId, long FileOffset)>();
@@ -128,13 +123,8 @@ namespace OsmNightWatch.PbfParsing
             var uncompressedData = new ReadOnlySpan<byte>(uncompressbuffer, 0, (int)uncompressedDataSize);
             var stringTableSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
             uncompressedData = uncompressedData.Slice(stringTableSize);
-            //var targetLength = uncompressedData.Length - stringTableSize;
-            //while (uncompressedData.Length > targetLength)
-            //{
-            //    var size = BinSerialize.ReadProtoString(ref uncompressedData);
-            //}
-            var primitivegroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
-            var lengthAtEnd = uncompressedData.Length - primitivegroupSize;
+            var primitiveGroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
+            var lengthAtEnd = uncompressedData.Length - primitiveGroupSize;
             while (uncompressedData.Length > lengthAtEnd)
             {
                 var (index, primitiveSize) = BinSerialize.ReadProtoByteArraySize(ref uncompressedData);
@@ -152,11 +142,8 @@ namespace OsmNightWatch.PbfParsing
                             return (OsmGeoType.Node, currentNodeId);// return first node since right now we only care about that
                         }
                         uncompressedData = uncompressedData.Slice(uncompressedData.Length - lengthAtEndDenseNodes);
-
-                        //if (uncompressedData.Length == 0)
-                        //    return -1;
-                        primitivegroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
-                        lengthAtEnd = uncompressedData.Length - primitivegroupSize;
+                        primitiveGroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
+                        lengthAtEnd = uncompressedData.Length - primitiveGroupSize;
                         break;
                     case 3:
                         BinSerialize.EnsureProtoIndexAndType(ref uncompressedData, 1, 0);
@@ -197,21 +184,34 @@ namespace OsmNightWatch.PbfParsing
         {
             var binaryReader = new BinaryReader(cacheStream);
             nodeOffsets = new (long FirstNodeId, long FileOffset)[binaryReader.ReadInt32()];
+            long maxSize = 0;
             for (int i = 0; i < nodeOffsets.Length; i++)
             {
                 nodeOffsets[i] = (binaryReader.ReadInt64(), binaryReader.ReadInt64());
+                if (i > 1)
+                {
+                    maxSize = Math.Max(maxSize, nodeOffsets[i].FileOffset - nodeOffsets[i - 1].FileOffset);
+                }
             }
 
             wayOffsets = new (long FirstWayId, long FileOffset)[binaryReader.ReadInt32()];
             for (int i = 0; i < wayOffsets.Length; i++)
             {
                 wayOffsets[i] = (binaryReader.ReadInt64(), binaryReader.ReadInt64());
+                if (i > 1)
+                {
+                    maxSize = Math.Max(maxSize, wayOffsets[i].FileOffset - wayOffsets[i - 1].FileOffset);
+                }
             }
 
             relationOffsets = new (long FirstRelationId, long FileOffset)[binaryReader.ReadInt32()];
             for (int i = 0; i < relationOffsets.Length; i++)
             {
                 relationOffsets[i] = (binaryReader.ReadInt64(), binaryReader.ReadInt64());
+                if (i > 1)
+                {
+                    maxSize = Math.Max(maxSize, relationOffsets[i].FileOffset - relationOffsets[i - 1].FileOffset);
+                }
             }
             PbfPath = pbfPath;
         }
@@ -300,7 +300,7 @@ namespace OsmNightWatch.PbfParsing
             return relationOffsets.Select(o => o.FileOffset).ToList();
         }
 
-        public List<(long FileOffset, HashSet<long>? AllElementsInside)> CaclulateFileOffsets(IEnumerable<long> elementsToLoad, OsmGeoType type)
+        public List<(long FileOffset, HashSet<long>? AllElementsInside)> CalculateFileOffsets(IEnumerable<long> elementsToLoad, OsmGeoType type)
         {
             var result = new List<(long FileOffset, HashSet<long>?)>();
             var sortedElements = elementsToLoad.ToArray();
@@ -346,6 +346,10 @@ namespace OsmNightWatch.PbfParsing
         public long GetLastNodeOffset()
         {
             return nodeOffsets.Last().FileOffset;
+        }
+        public long GetFirstNodeIdInLastOffset()
+        {
+            return nodeOffsets.Last().FirstNodeId;
         }
     }
 }

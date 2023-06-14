@@ -551,11 +551,11 @@ namespace OsmSharp.IO.Binary
         {
             if (value == null)
             {
-                stream.WriteVarInt32((int)0);
+                stream.WriteVarInt32(0);
             }
             else if (string.IsNullOrWhiteSpace(value))
             {
-                stream.WriteVarInt32((int)1);
+                stream.WriteVarInt32(1);
             }
             else
             {

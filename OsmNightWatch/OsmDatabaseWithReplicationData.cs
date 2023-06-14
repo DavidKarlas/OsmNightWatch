@@ -1,162 +1,60 @@
-﻿using OsmSharp;
-using OsmSharp.Changesets;
-using OsmSharp.Db;
+﻿using OsmNightWatch.PbfParsing;
 
 namespace OsmNightWatch
 {
     public class OsmDatabaseWithReplicationData : IOsmGeoFilterableSource
     {
-        private readonly IOsmGeoSource baseSource;
+        private readonly IOsmGeoFilterableSource baseSource;
 
         private Dictionary<long, Relation?> changesetRelations = new();
         private Dictionary<long, Way?> changesetWays = new();
         private Dictionary<long, Node?> changesetNodes = new();
 
-        public OsmDatabaseWithReplicationData(IOsmGeoSource baseSource)
+        private KeyValueDatabase keyValueDatabase;
+
+        public OsmDatabaseWithReplicationData(IOsmGeoFilterableSource baseSource, KeyValueDatabase keyValueDatabase)
         {
             this.baseSource = baseSource;
+            this.keyValueDatabase = keyValueDatabase;
         }
 
-        public void ApplyChangeset(OsmChange changeset)
+        public void ApplyChangeset(MergedChangeset changeset)
         {
-            foreach (var change in changeset.Create)
+            changesetNodes.Clear();
+            changesetWays.Clear();
+            changesetRelations.Clear();
+
+            foreach (var change in changeset.Nodes)
             {
-                Put(change);
+                changesetNodes[change.Key] = change.Value;
             }
-            foreach (var change in changeset.Modify)
+            foreach (var change in changeset.Ways)
             {
-                Put(change);
+                changesetWays[change.Key] = change.Value;
             }
-            foreach (var change in changeset.Delete)
+            foreach (var change in changeset.Relations)
             {
-                switch (change.Type)
-                {
-                    case OsmGeoType.Node:
-                        if (change.Id is long idNode)
-                        {
-                            if (changesetNodes.TryGetValue(idNode, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
-                                continue;
-                            changesetNodes[idNode] = null;
-                        }
-                        break;
-                    case OsmGeoType.Way:
-                        if (change.Id is long idWay)
-                        {
-                            if (changesetWays.TryGetValue(idWay, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
-                                continue;
-                            changesetWays[idWay] = null;
-                        }
-                        break;
-                    case OsmGeoType.Relation:
-                        if (change.Id is long idRelation)
-                        {
-                            if (changesetRelations.TryGetValue(idRelation, out var toBeDeleted) && (toBeDeleted?.Version ?? 0) > change.Version)
-                                continue;
-                            changesetRelations[idRelation] = null;
-                        }
-                        break;
-                    default:
-                        throw new NotImplementedException();
-                }
+                changesetRelations[change.Key] = change.Value;
             }
+
+            keyValueDatabase.UpdateNodes(changesetNodes);
+            keyValueDatabase.UpdateWays(changesetWays);
+            keyValueDatabase.UpdateRelations(changesetRelations);
         }
 
-        private void Put(OsmGeo element)
+        public void Put(OsmGeo element)
         {
             switch (element.Type)
             {
                 case OsmGeoType.Node:
-                    changesetNodes[(long)element.Id!] = (Node)element;
+                    changesetNodes[element.Id] = (Node)element;
                     break;
                 case OsmGeoType.Way:
-                    changesetWays[(long)element.Id!] = (Way)element;
+                    changesetWays[element.Id] = (Way)element;
                     break;
                 case OsmGeoType.Relation:
-                    changesetRelations[(long)element.Id!] = (Relation)element;
+                    changesetRelations[element.Id] = (Relation)element;
                     break;
-            }
-        }
-
-        public void BatchLoad(HashSet<long> nodeIds, HashSet<long> wayIds, HashSet<long> relationIds)
-        {
-            if (nodeIds != null)
-            {
-                nodeIds = new HashSet<long>(nodeIds);
-                nodeIds.ExceptWith(changesetNodes.Keys);
-            }
-            if (wayIds != null)
-            {
-                wayIds = new HashSet<long>(wayIds);
-                wayIds.ExceptWith(changesetWays.Keys);
-            }
-            if (relationIds != null)
-            {
-                relationIds = new HashSet<long>(relationIds);
-                relationIds.ExceptWith(changesetRelations.Keys);
-            }
-            (baseSource as IOsmGeoBatchSource)?.BatchLoad(nodeIds, wayIds, relationIds);
-        }
-
-        Dictionary<FilterSettings, List<OsmGeo>> _cache = new();
-
-        public IEnumerable<OsmGeo> Filter(FilterSettings filterSettings)
-        {
-            var filters = filterSettings.Filters;
-            var nodeFilter = filters.Where(f => f.GeoType == OsmGeoType.Node).SingleOrDefault();
-            var wayFilter = filters.Where(f => f.GeoType == OsmGeoType.Way).SingleOrDefault();
-            var relationFilter = filters.Where(f => f.GeoType == OsmGeoType.Relation).SingleOrDefault();
-
-            if (baseSource is IOsmGeoFilterableSource baseFilterableSource)
-            {
-                if (!_cache.TryGetValue(filterSettings, out var results))
-                {
-                    _cache[filterSettings] = results = baseFilterableSource.Filter(filterSettings).ToList();
-                }
-
-                foreach (var baseResult in results)
-                {
-                    switch (baseResult)
-                    {
-                        case Node node:
-                            if (!changesetNodes.ContainsKey(node.Id!.Value))
-                                yield return node;
-                            break;
-                        case Way way:
-                            if (!changesetWays.ContainsKey(way.Id!.Value))
-                                yield return way;
-                            break;
-                        case Relation relation:
-                            if (!changesetRelations.ContainsKey(relation.Id!.Value))
-                                yield return relation;
-                            break;
-                        default:
-                            throw new NotImplementedException();
-                    }
-                }
-            }
-            if (nodeFilter != null)
-            {
-                foreach (var node in changesetNodes.Values)
-                {
-                    if (node != null && nodeFilter.Matches(node))
-                        yield return node;
-                }
-            }
-            if (wayFilter != null)
-            {
-                foreach (var way in changesetWays.Values)
-                {
-                    if (way != null && wayFilter.Matches(way))
-                        yield return way;
-                }
-            }
-            if (relationFilter != null)
-            {
-                foreach (var relation in changesetRelations.Values)
-                {
-                    if (relation != null && relationFilter.Matches(relation))
-                        yield return relation;
-                }
             }
         }
 
@@ -169,11 +67,19 @@ namespace OsmNightWatch
                     {
                         return node;
                     }
+                    else if (keyValueDatabase.TryGetNode(id, out var nodeFromDb))
+                    {
+                        return nodeFromDb;
+                    }
                     break;
                 case OsmGeoType.Way:
                     if (changesetWays.TryGetValue(id, out var way))
                     {
                         return way;
+                    }
+                    else if (keyValueDatabase.TryGetWay(id, out var wayFromDb))
+                    {
+                        return wayFromDb;
                     }
                     break;
                 case OsmGeoType.Relation:
@@ -181,9 +87,63 @@ namespace OsmNightWatch
                     {
                         return relation;
                     }
+                    else if (keyValueDatabase.TryGetRelation(id, out var relationFromDb))
+                    {
+                        return relationFromDb;
+                    }
                     break;
             }
             return baseSource.Get(type, id);
+        }
+
+        public (IReadOnlyCollection<Node> nodes, IReadOnlyCollection<Way> ways, IReadOnlyCollection<Relation> relations) BatchLoad(HashSet<long> nodeIds, HashSet<long> wayIds, HashSet<long> relationIds)
+        {
+            var (nodes, ways, relations) = baseSource.BatchLoad(nodeIds, wayIds, relationIds);
+            foreach (var node in nodes)
+            {
+                Put(node);
+            }
+            foreach (var way in ways)
+            {
+                Put(way);
+            }
+            foreach (var relation in relations)
+            {
+                Put(relation);
+            }
+
+            return (nodes, ways, relations);
+        }
+
+        public void StoreCache()
+        {
+            keyValueDatabase.UpdateNodes(changesetNodes, true);
+            keyValueDatabase.UpdateWays(changesetWays, true);
+            keyValueDatabase.UpdateRelations(changesetRelations, true);
+        }
+
+        public Node GetNode(long id)
+        {
+            return Get(OsmGeoType.Node, id) as Node;
+        }
+
+        public Way GetWay(long id)
+        {
+            return Get(OsmGeoType.Way, id) as Way;
+        }
+
+        public Relation GetRelation(long id)
+        {
+            return Get(OsmGeoType.Relation, id) as Relation;
+        }
+
+        public IEnumerable<OsmGeo> Filter(FilterSettings filterSettings)
+        {
+            foreach (var element in baseSource.Filter(filterSettings))
+            {
+                Put(element);
+                yield return element;
+            }
         }
     }
 }

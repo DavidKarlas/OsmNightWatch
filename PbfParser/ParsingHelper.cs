@@ -2,10 +2,6 @@
 using System.Buffers.Binary;
 using System.Buffers;
 using System.Collections.Concurrent;
-using System.Text;
-using OsmSharp;
-using OsmSharp.Tags;
-using OsmSharp.IO.PBF;
 
 namespace OsmNightWatch.PbfParsing
 {
@@ -28,15 +24,12 @@ namespace OsmNightWatch.PbfParsing
             return (int)BinSerialize.ReadProtoUInt32(ref osmHeaderBufferR);
         }
 
-        public static void ParallelParse(string path, List<(long FileOffset, HashSet<long>? AllElementsInside)> fileOffsets, Action<HashSet<long>?, byte[]> action)
+        public static void ParallelParse(string path, List<(long FileOffset, HashSet<long>? AllElementsInside)> fileOffsets, Action<HashSet<long>?, byte[], object?> action, Func<object>? perThreadStateCreator = null)
         {
             using var file = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             var tasks = new List<Task>();
-#if DEBUG
-            var slimSemaphore = new SemaphoreSlim(1);
-#else
             var slimSemaphore = new SemaphoreSlim(24);
-#endif
+            var states = new ConcurrentStack<object?>(Enumerable.Range(0, slimSemaphore.CurrentCount).Select((i) => perThreadStateCreator == null ? null : perThreadStateCreator()));
             foreach (var fileOffset in fileOffsets)
             {
                 file.Seek(fileOffset.FileOffset, SeekOrigin.Begin);
@@ -47,10 +40,14 @@ namespace OsmNightWatch.PbfParsing
                 if (file.Read(readBuffer, 0, blobSize) != blobSize)
                     throw new Exception("Too small file.");
                 slimSemaphore.Wait();
-                tasks.Add(Task.Run(() =>
-                {
-                    action(fileOffset.AllElementsInside, readBuffer);
+                tasks.Add(Task.Run(() => {
+                    if (!states.TryPop(out var state))
+                    {
+                        throw new InvalidOperationException();
+                    }
+                    action(fileOffset.AllElementsInside, readBuffer, state);
                     ArrayPool<byte>.Shared.Return(readBuffer);
+                    states.Push(state);
                     slimSemaphore.Release();
                 }));
                 tasks.RemoveAll(task => task.IsCompleted);

@@ -1,7 +1,5 @@
-﻿using OsmSharp;
-using OsmSharp.Db;
-using System;
-using System.Collections.Generic;
+﻿
+using OsmNightWatch.PbfParsing;
 
 namespace OsmNightWatch.Analyzers.BrokenCoastline
 {
@@ -15,7 +13,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             public Dictionary<long, List<Way>> DuplicateLastNodes = new();
         }
 
-        public (List<(long nodeId, int issueDetails)>,List<(Way way, int issueDetails)>) Visit(IEnumerable<OsmGeo> coastline, IOsmGeoSource db)
+        public (List<(long nodeId, int issueDetails)>,List<(Way way, int issueDetails)>) Visit(IEnumerable<OsmGeo> coastline)
         {
             Graph graph = new();
             List<(long nodeId, int detailsNum)> issueNodes = new();

@@ -426,7 +426,7 @@ namespace OsmSharp.IO.Binary
 
         private static long FromUnsigned(ulong unsigned)
         {
-            var sign = unsigned & (uint)1;
+            var sign = unsigned & 1;
 
             var value = (long)(unsigned >> 1);
             if (sign == 1)
@@ -442,7 +442,7 @@ namespace OsmSharp.IO.Binary
             if (unsignedNullable == null) return null;
 
             var unsigned = unsignedNullable.Value;
-            var sign = unsigned & (uint)1;
+            var sign = unsigned & 1;
 
             var value = (long)(unsigned >> 1);
             if (sign == 1)
@@ -455,7 +455,7 @@ namespace OsmSharp.IO.Binary
 
         private static int FromUnsigned(uint unsigned)
         {
-            var sign = unsigned & (uint)1;
+            var sign = unsigned & 1;
 
             var value = (int)(unsigned >> 1);
             if (sign == 1)
@@ -471,7 +471,7 @@ namespace OsmSharp.IO.Binary
             if (unsignedNullable == null) return null;
 
             var unsigned = unsignedNullable.Value;
-            var sign = unsigned & (uint)1;
+            var sign = unsigned & 1;
 
             var value = (int)(unsigned >> 1);
             if (sign == 1)

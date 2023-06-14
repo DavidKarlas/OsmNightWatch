@@ -1,10 +1,5 @@
-﻿using OsmSharp;
+﻿using OsmNightWatch.PbfParsing;
 using OsmSharp.Tags;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace OsmNightWatch
 {
@@ -19,19 +14,26 @@ namespace OsmNightWatch
         
         public List<TagFilter> Tags { get; }
 
-        public ElementFilter(OsmGeoType geoType, IEnumerable<TagFilter> tags)
-        {
+        public bool NeedsWays { get; }
+        
+        public bool NeedsNodes { get; }
+
+        public ElementFilter(OsmGeoType geoType, IEnumerable<TagFilter> tags, bool needsWays = false, bool needsNodes = false) {
             GeoType = geoType;
             Tags = tags.ToList();
+            NeedsWays = needsWays;
+            NeedsNodes = needsNodes;
         }
 
         public bool Matches(OsmGeo element)
         {
             if (element.Type != GeoType)
                 throw new InvalidOperationException();
+            if (element.Tags == null)
+                return false;
             foreach (var tagFilter in Tags)
             {
-                if (element.Tags == null || !tagFilter.Matches(element.Tags))
+                if (!tagFilter.Matches(element.Tags))
                     return false;
             }
             return true;
@@ -41,21 +43,21 @@ namespace OsmNightWatch
     public class TagFilter
     {
         public string KeyFilter { get; }
-        public string? ValueFilter { get; }
+        public HashSet<string> ValidValues { get; }
 
-        public TagFilter(string keyFilter, string? valueFilter = null)
+        public TagFilter(string keyFilter, params string[] validValues)
         {
             KeyFilter = keyFilter;
-            ValueFilter = valueFilter;
+            ValidValues = new HashSet<string>(validValues);
         }
 
         public bool Matches(TagsCollectionBase tags)
         {
             if (tags.TryGetValue(KeyFilter, out var value))
             {
-                if (ValueFilter == null)
+                if (ValidValues.Count == 0)
                     return true;
-                return value == ValueFilter;
+                return ValidValues.Contains(value);
             }
             return false;
         }

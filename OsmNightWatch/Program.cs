@@ -1,7 +1,7 @@
 ﻿using OsmNightWatch;
 using OsmNightWatch.Analyzers;
+using OsmNightWatch.Analyzers.AdminCountPerCountry;
 using OsmNightWatch.Analyzers.BrokenCoastline;
-using OsmNightWatch.Analyzers.OpenPolygon;
 using OsmNightWatch.Lib;
 using OsmNightWatch.PbfParsing;
 using OsmSharp.Changesets;
@@ -12,125 +12,157 @@ using System.Xml.Serialization;
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
 
-var path = @"D:\planet-221219.osm.pbf";
+Log("Hello world");
+
+var path = @"C:\COSMOS\planet-230508.osm.pbf";
+
+using var database = new KeyValueDatabase(Path.GetFullPath("NightWatchDatabase"));
+database.Initialize();
+database.BeginTransaction();
+
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
-var analyzers = new IOsmAnalyzer[] { new AdminOpenPolygonAnalyzer(), new BrokenCoastlineAnalyzer() };
-var dbWithChagnes = new OsmDatabaseWithReplicationData(pbfDb);
-var pbfTimestamp = Utils.GetLatestTimtestampFromPbf(index);
-Console.WriteLine($"PBF timestamp {pbfTimestamp}.");
-IReplicationDiffEnumerator enumerator = new CatchupReplicationDiffEnumerator(pbfTimestamp);
-IssuesData oldIssuesData = await IssuesUploader.DownloadAsync();
+var analyzers = new IOsmAnalyzer[] {
+    new AdminCountPerCountryAnalyzer(database),
+    new BrokenCoastlineAnalyzer(database)
+};
+
+var dbWithChanges = new OsmDatabaseWithReplicationData(pbfDb, database);
+var currentTimeStamp = database.GetTimestamp();
+if (currentTimeStamp == null)
+{
+    foreach (var analyzer in analyzers)
+    {
+        var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings).ToArray();
+        Log($"Starting {analyzer.AnalyzerName}...");
+        var issues = analyzer.ProcessPbf(relevantThings, dbWithChanges);
+        Log($"Found {issues.Count()} issues.");
+    }
+    Log("Storing relevant elements into LMDB.");
+    dbWithChanges.StoreCache();
+    Log("Finished storing relevant elements into LMDB.");
+    database.CommitTransaction();
+    Log("Committed transaction.");
+    currentTimeStamp = Utils.GetLatestTimestampFromPbf(index);
+}
+else
+{
+    database.AbortTransaction();
+}
+IReplicationDiffEnumerator enumerator = new CatchupReplicationDiffEnumerator((DateTime)currentTimeStamp);
+IssuesData? oldIssuesData = IssuesUploader.Download();
+
+
 while (true)
 {
-retryEnumerator:
+    var replicationState = GetNextState();
+
+retry:
     try
     {
-        if (await enumerator.MoveNext() == false)
-        {
-            Console.WriteLine($"Failed to iterate enumerator... Sleeping 1 minute.");
-            await Task.Delay(TimeSpan.FromMinutes(1));
-            if (enumerator.State.Config.Period == ReplicationConfig.Minutely.Period && enumerator is CatchupReplicationDiffEnumerator)
-            {
-                enumerator = await ReplicationConfig.Minutely.GetDiffEnumerator(enumerator.State.SequenceNumber);
-            }
-            continue;
-        }
+        Log($"Downloading changeset '{replicationState.EndTimestamp}'.");
+        var changeset = DownloadChangeset(replicationState.Config, replicationState.SequenceNumber);
+
+        database.BeginTransaction();
+
+        var mergedChangeset = new MergedChangeset(changeset);
+        Log($"Applying changeset to database...");
+        dbWithChanges.ApplyChangeset(mergedChangeset);
+
+        database.SetTimestamp(replicationState.EndTimestamp);
+        Log($"Analyzing changeset...");
+        var newIssuesData = Analyze(analyzers, mergedChangeset, dbWithChanges, replicationState);
+
+        newIssuesData.SetTimestampsAndLastKnownGood(oldIssuesData);
+        oldIssuesData = newIssuesData;
+        UploadIssues(replicationState, newIssuesData);
+        database.CommitTransaction();
     }
     catch (Exception ex)
     {
-        Console.WriteLine(ex);
-        goto retryEnumerator;
-    }
-    var replicationState = enumerator.State;
-    if (replicationState is null)
-    {
-        Console.WriteLine($"Enumerator returned null state, sleeping 1 minute.");
-        await Task.Delay(TimeSpan.FromMinutes(1));
-        continue;
-    }
-    bool retryingProcessing = false;
-retryProcessing:
-    try
-    {
-        Console.WriteLine($"Downloading changeset '{replicationState.SequenceNumber}'.");
-        var changeset = await DownloadDiff(replicationState.Config, replicationState.SequenceNumber, retryingProcessing);
-        if (changeset is null)
-        {
-            throw new InvalidOperationException("How we got changeset but no replication state?");
-        }
-        Console.WriteLine($"Processing changeset '{replicationState.Config.Url}' '{replicationState.SequenceNumber}' from '{replicationState.EndTimestamp}'.");
-
-        dbWithChagnes.ApplyChangeset(changeset);
-
-        // Only do processing old changesets newer than already processed data..
-        if (replicationState.EndTimestamp > oldIssuesData.DateTime)
-        {
-            var newIssuesData = new IssuesData()
-            {
-                DateTime = replicationState.EndTimestamp,
-                MinutelySequenceNumber = (int)replicationState.SequenceNumber
-            };
-            foreach (var analyzer in analyzers)
-            {
-                Console.WriteLine($"{DateTime.Now} Starting {analyzer.AnalyzerName}.");
-                var relevantThings = dbWithChagnes.Filter(analyzer.FilterSettings).ToArray();
-                Console.WriteLine($"{DateTime.Now} Filtered relevant things {relevantThings.Length}.");
-                var issues = analyzer.GetIssues(relevantThings, dbWithChagnes).ToList();
-                Console.WriteLine($"{DateTime.Now} Found {issues.Count} issues.");
-                newIssuesData.AllIssues.AddRange(issues);
-            }
-
-            newIssuesData.SetTimestampsAndLastKnownGood(oldIssuesData);
-            oldIssuesData = newIssuesData;
-
-        retryUpload:
-            //Only do uploading on changesets that are 5 minutes or newer
-            if (replicationState.EndTimestamp.AddMinutes(5) > DateTime.UtcNow)
-            {
-                try
-                {
-                    await IssuesUploader.UploadAsync(newIssuesData);
-                }
-                catch (Exception ex)
-                {
-                    Thread.Sleep(5000);
-                    Console.WriteLine(ex);
-                    goto retryUpload;
-                }
-            }
-        }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine(ex);
-        retryingProcessing = true;
-        goto retryProcessing;
+        Log(ex.ToString());
+        database.AbortTransaction();
+        goto retry;
     }
 }
 
+static void Log(string message)
+{
+    Console.WriteLine(DateTime.Now.ToString("s") + ": " + message);
+}
+
+ReplicationState GetNextState()
+{
+    while (true)
+    {
+        try
+        {
+            if (enumerator.MoveNext().Result == false)
+            {
+                Log($"Failed to iterate enumerator... Sleeping 1 minute.");
+                Task.Delay(TimeSpan.FromMinutes(1)).Wait();
+                if (enumerator.State.Config.Period == ReplicationConfig.Minutely.Period && enumerator is CatchupReplicationDiffEnumerator)
+                {
+                    enumerator = ReplicationConfig.Minutely.GetDiffEnumerator(enumerator.State.SequenceNumber).Result;
+                }
+                continue;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log(ex.ToString());
+            continue;
+        }
+        var replicationState = enumerator.State;
+        if (replicationState is null)
+        {
+            Log($"Enumerator returned null state, sleeping 1 minute.");
+            Task.Delay(TimeSpan.FromMinutes(1)).Wait();
+            continue;
+        }
+        return replicationState;
+    }
+}
 
 string DiffUrl(ReplicationConfig config, string filePath)
 {
     return new Uri(new Uri(config.Url), filePath).ToString();
 }
 
-async Task<OsmChange?> DownloadDiff(ReplicationConfig config, long sequenceNumber, bool ignoreCache)
+OsmChange DownloadChangeset(ReplicationConfig config, long sequenceNumber)
 {
-    var replicationFilePath = ReplicationFilePath(sequenceNumber);
-    var url = DiffUrl(config, replicationFilePath);
-    var cachePath = Path.Combine(@"D:\", "ReplicationCache", config.IsDaily ? "daily" : config.IsHourly ? "hour" : "minute", replicationFilePath);
-    if (ignoreCache || !File.Exists(cachePath))
+    bool ignoreCache = false;
+    while (true)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(cachePath));
-        using FileStream fsw = File.Create(cachePath);
-        using Stream stream = await httpClient.GetStreamAsync(url, new CancellationTokenSource(120_000).Token);
-        await stream.CopyToAsync(fsw, new CancellationTokenSource(120_000).Token);
+        try
+        {
+            var replicationFilePath = ReplicationFilePath(sequenceNumber);
+            var url = DiffUrl(config, replicationFilePath);
+            var cachePath = Path.Combine(@"C:\", "ReplicationCache", config.IsDaily ? "daily" : config.IsHourly ? "hour" : "minute", replicationFilePath);
+            if (ignoreCache || !File.Exists(cachePath))
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(cachePath));
+                using FileStream fsw = File.Create(cachePath);
+                using Stream stream = httpClient.GetStreamAsync(url).Result;
+                stream.CopyTo(fsw);
+            }
+            Log("Deserializing changeset...");
+            using FileStream fs = File.OpenRead(cachePath);
+            using GZipStream stream2 = new GZipStream(fs, CompressionMode.Decompress);
+            using StreamReader textReader = new StreamReader(stream2);
+            var changeset = ThreadLocalXmlSerializer.Value!.Deserialize(textReader) as OsmChange;
+            if (changeset is null)
+            {
+                throw new InvalidOperationException("How we got replication state but no changeset?");
+            }
+            return changeset;
+        }
+        catch (Exception ex)
+        {
+            ignoreCache = true;
+            Log("Failed to download/deserialize changeset: " + ex);
+        }
     }
-    using FileStream fs = File.OpenRead(cachePath);
-    using GZipStream stream2 = new GZipStream(fs, CompressionMode.Decompress);
-    using StreamReader textReader = new StreamReader(stream2);
-    return ThreadLocalXmlSerializer.Value!.Deserialize(textReader) as OsmChange;
 }
 
 static string ReplicationFilePath(long sequenceNumber)
@@ -142,4 +174,39 @@ static string ReplicationFilePath(long sequenceNumber)
     string text5 = text2.Substring(6, 3);
     var filePath = $"{text3}/{text4}/{text5}.osc.gz";
     return filePath;
+}
+
+static void UploadIssues(ReplicationState replicationState, IssuesData newIssuesData)
+{
+    // Only do uploading on changesets that are newer than 5 minutes
+    if (replicationState.EndTimestamp.AddMinutes(5) > DateTime.UtcNow)
+    {
+        try
+        {
+            IssuesUploader.Upload(newIssuesData);
+        }
+        catch (Exception ex)
+        {
+            Thread.Sleep(5000);
+            Console.WriteLine(ex);
+        }
+    }
+}
+
+static IssuesData Analyze(IOsmAnalyzer[] analyzers, MergedChangeset mergedChangeset, OsmDatabaseWithReplicationData dbWithChanges, ReplicationState replicationState)
+{
+    var newIssuesData = new IssuesData() {
+        DateTime = replicationState.EndTimestamp,
+        MinutelySequenceNumber = (int)replicationState.SequenceNumber
+    };
+
+    foreach (var analyzer in analyzers)
+    {
+        Log($"Starting {analyzer.AnalyzerName}...");
+        var issues = analyzer.ProcessChangeset(mergedChangeset, dbWithChanges).ToList();
+        Log($"Found {issues.Count} issues.");
+        newIssuesData.AllIssues.AddRange(issues);
+    }
+
+    return newIssuesData;
 }

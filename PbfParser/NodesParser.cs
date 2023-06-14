@@ -3,7 +3,6 @@ using OsmSharp.IO.PBF;
 using System.Buffers;
 using System.Collections.Concurrent;
 using static OsmNightWatch.PbfParsing.ParsingHelper;
-using Node = OsmSharp.Node;
 
 namespace OsmNightWatch.PbfParsing
 {
@@ -14,16 +13,16 @@ namespace OsmNightWatch.PbfParsing
             return .000000001 * (offset + granularity * valueOffset);
         }
 
-        public static Dictionary<long, Node> LoadNodes(HashSet<long> nodesToLoad, PbfIndex index)
+        public static IReadOnlyCollection<Node> LoadNodes(HashSet<long>? nodesToLoad, PbfIndex index)
         {
-            var fileOffsets = index.CaclulateFileOffsets(nodesToLoad, OsmGeoType.Node);
+            if (nodesToLoad == null || nodesToLoad.Count == 0)
+                return Array.Empty<Node>();
+            var fileOffsets = index.CalculateFileOffsets(nodesToLoad, OsmGeoType.Node);
             var nodeBags = new ConcurrentBag<Node>();
-            ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer) =>
-            {
+            ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
                 ParseNodes(nodeBags, relevantIds, readBuffer);
             });
-
-            return nodeBags.ToDictionary(n => (long)n.Id!, n => n);
+            return nodeBags;
         }
 
         private static void ParseNodes(ConcurrentBag<Node> nodeBags, HashSet<long>? nodesToLoad, byte[] readBuffer)
@@ -108,12 +107,7 @@ namespace OsmNightWatch.PbfParsing
                             {
                                 if (nodesToLoad?.Contains(nodes[i]) ?? true)
                                 {
-                                    nodeBags.Add(new Node()
-                                    {
-                                        Id = nodes[i],
-                                        Latitude = DecodeLatLon(lats[i], lat_offset, granularity),
-                                        Longitude = DecodeLatLon(lons[i], lon_offset, granularity)
-                                    });
+                                    nodeBags.Add(new Node(nodes[i], DecodeLatLon(lats[i], lat_offset, granularity), DecodeLatLon(lons[i], lon_offset, granularity)));
                                     nodesToLoad?.Remove(nodes[i]);
                                     if (nodesToLoad != null && nodesToLoad.Count == 0)
                                     {
@@ -143,7 +137,7 @@ namespace OsmNightWatch.PbfParsing
 
         class NodeCollector : IPBFOsmPrimitiveConsumer
         {
-            public List<Node> Nodes { get; } = new List<Node>();
+            public List<OsmSharp.Node> Nodes { get; } = new ();
 
             public void ProcessNode(PrimitiveBlock block, OsmSharp.IO.PBF.Node node)
             {
@@ -161,7 +155,7 @@ namespace OsmNightWatch.PbfParsing
             }
         }
 
-        public static Node[] LoadNodesWithMetadata(string pbfPath, long offset)
+        public static OsmSharp.Node[] LoadNodesWithMetadata(string pbfPath, long offset)
         {
             using var fileStream = new FileStream(pbfPath, FileMode.Open, FileAccess.Read, FileShare.Read);
             fileStream.Position = offset;

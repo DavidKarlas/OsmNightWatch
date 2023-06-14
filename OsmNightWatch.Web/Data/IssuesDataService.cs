@@ -16,7 +16,7 @@ namespace OsmNightWatch.Web.Data
             {
                 return cache;
             }
-            cache = client.GetFromJsonAsync<IssuesData>("https://davidupload.blob.core.windows.net/data/issues2.json")!;
+            cache = client.GetFromJsonAsync<IssuesData>("https://davidupload.blob.core.windows.net/data/issues.json")!;
             lastCache.Restart();
             return cache;
         }
