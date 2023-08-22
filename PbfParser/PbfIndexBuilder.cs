@@ -14,6 +14,12 @@ namespace OsmNightWatch.PbfParsing
 {
     public class PbfIndexBuilder
     {
+        public static bool DoesIndexExist(string pbfPath)
+        {
+            var cachePath = Path.ChangeExtension(pbfPath, "pbf.index");
+            return File.Exists(cachePath);
+        }
+
         public static PbfIndex BuildIndex(string pbfPath, bool ignoreCache = false)
         {
             var cachePath = Path.ChangeExtension(pbfPath, "pbf.index");

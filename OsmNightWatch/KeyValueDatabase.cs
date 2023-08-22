@@ -2,16 +2,13 @@
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Prepared;
 using NetTopologySuite.Index.Strtree;
-using Npgsql;
+using NetTopologySuite.IO;
 using OsmNightWatch.Analyzers.AdminCountPerCountry;
 using OsmNightWatch.PbfParsing;
 using OsmSharp.Tags;
-using System;
 using System.Buffers.Binary;
-using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using System.Text.Json;
+using System.Data.SQLite;
+using System.Reflection.PortableExecutable;
 
 namespace OsmNightWatch
 {
@@ -19,7 +16,7 @@ namespace OsmNightWatch
     {
         private const int TimestampDbKey = 1;
         private readonly LightningEnvironment dbEnv;
-        NpgsqlDataSource dataSource;
+        SQLiteConnection sqlConnection;
         private LightningTransaction? transaction;
         private Dictionary<string, LightningDatabase> databases = new();
 
@@ -27,7 +24,7 @@ namespace OsmNightWatch
         {
             var dbEnv = new LightningEnvironment(storePath);
             dbEnv.MaxDatabases = 10;
-            dbEnv.MapSize = 16L * 1024L * 1024L * 1024L;//16GB should be enough, I hope
+            dbEnv.MapSize = 32L * 1024L * 1024L * 1024L;//16GB should be enough, I hope
             dbEnv.Open();
             return dbEnv;
         }
@@ -35,40 +32,56 @@ namespace OsmNightWatch
         public KeyValueDatabase(string storePath)
         {
             dbEnv = CreateEnv(storePath);
-            var dataSourceBuilder = new NpgsqlDataSourceBuilder("Host=localhost;Username=postgres;Password=a;Database=postgis_33_sample");
-            dataSourceBuilder.UseNetTopologySuite();
-            dataSource = dataSourceBuilder.Build();
+            sqlConnection = new SQLiteConnection($"Data Source={Path.Combine(storePath, "sqlite.db")};Version=3;");
         }
 
         public void Initialize()
         {
-            using (var comm = dataSource.CreateCommand("CREATE TABLE IF NOT EXISTS Admins (Id int PRIMARY KEY, FriendlyName text, AdminLevel int, geom GEOMETRY, Reason text)"))
-                comm.ExecuteNonQuery();
-            using (var comm = dataSource.CreateCommand("CREATE INDEX IF NOT EXISTS admin_geom_index  ON admins  USING GIST (geom);"))
-                comm.ExecuteNonQuery();
-            //using (var comm = dataSource.CreateCommand("CREATE INDEX admin_level_index  ON admins  USING HASH (AdminLevel);"))
-            //    comm.ExecuteNonQuery();
+            sqlConnection.Open();
+            sqlConnection.EnableExtensions(true);
+            sqlConnection.LoadExtension("mod_spatialite");
+            using var existsCommand = sqlConnection.CreateCommand("SELECT name FROM sqlite_master WHERE type='table' AND name='Admins';");
+            if (existsCommand.ExecuteScalar() == null)
+            {
+                var transaction = sqlConnection.BeginTransaction();
+                sqlConnection.ExecuteNonQuery("SELECT InitSpatialMetaData();");
+                sqlConnection.ExecuteNonQuery("CREATE TABLE Admins (Id int PRIMARY KEY, FriendlyName text, AdminLevel int, Reason text NULL);");
+                sqlConnection.ExecuteNonQuery("SELECT AddGeometryColumn('Admins', 'geom',  4326, 'GEOMETRY', 'XY');");
+                sqlConnection.ExecuteNonQuery("SELECT CreateSpatialIndex('Admins', 'geom');");
+                transaction.Commit();
+            }
         }
 
         public void DeleteAdmin(long id)
         {
-            using (var comm = dataSource.CreateCommand("DELETE FROM Admins WHERE Id = @id"))
+            lock (sqlConnection)
             {
-                comm.Parameters.AddWithValue("id", id);
-                comm.ExecuteNonQuery();
+                sqlConnection.ExecuteNonQuery($"DELETE FROM Admins WHERE Id = {id}");
             }
         }
+        static GaiaGeoWriter gaiaWriter = new GaiaGeoWriter();
 
         public void UpsertAdmin(long id, string friendlyName, int adminLevel, Geometry? polygon, string? reason)
         {
-            using (var comm = dataSource.CreateCommand("INSERT INTO Admins (Id, FriendlyName, AdminLevel, geom, reason) VALUES (@id, @friendlyName, @adminLevel, @geom, @reason) ON CONFLICT (Id) DO UPDATE SET geom = @geom, FriendlyName = @friendlyName, AdminLevel = @adminLevel, Reason = @reason"))
+            lock (sqlConnection)
             {
-                comm.Parameters.AddWithValue("id", id);
-                comm.Parameters.AddWithValue("friendlyName", friendlyName);
-                comm.Parameters.AddWithValue("adminLevel", adminLevel);
-                comm.Parameters.AddWithValue("geom", NpgsqlTypes.NpgsqlDbType.Geometry, polygon ?? (object)DBNull.Value);
-                comm.Parameters.AddWithValue("reason", NpgsqlTypes.NpgsqlDbType.Text, reason ?? (object)DBNull.Value);
-                comm.ExecuteNonQuery();
+                using (var comm = sqlConnection.CreateCommand("INSERT INTO Admins (Id, FriendlyName, AdminLevel, geom, reason) VALUES (@id, @friendlyName, @adminLevel, @geom, @reason) ON CONFLICT (Id) DO UPDATE SET geom = @geom, FriendlyName = @friendlyName, AdminLevel = @adminLevel, Reason = @reason"))
+                {
+                    comm.Parameters.AddWithValue("id", id);
+                    comm.Parameters.AddWithValue("friendlyName", friendlyName);
+                    comm.Parameters.AddWithValue("adminLevel", adminLevel);
+                    if (polygon != null)
+                    {
+                        polygon.SRID = 4326;
+                        comm.Parameters.AddWithValue("geom", gaiaWriter.Write(polygon));
+                    }
+                    else
+                    {
+                        comm.Parameters.AddWithValue("geom", DBNull.Value);
+                    }
+                    comm.Parameters.AddWithValue("reason", reason ?? (object)DBNull.Value);
+                    comm.ExecuteNonQuery();
+                }
             }
         }
 
@@ -474,22 +487,69 @@ namespace OsmNightWatch
         public void Dispose()
         {
             dbEnv.Dispose();
-            dataSource.Dispose();
+            sqlConnection.Close();
         }
 
         public List<long> GetCountryAdmins(long relationId, int adminLevel)
         {
-            using (var comm = dataSource.CreateCommand("SELECT adm.id as id FROM admins adm INNER JOIN admins country ON (country.geom && adm.geom AND ST_Relate(country.geom, adm.geom, '2********')) WHERE country.id=@relationId and adm.adminlevel = @adminLevel;"))
+            var result = new List<long>();
+            byte[] buffer = new byte[15 * 1024 * 1024];
+            var gaiaReader = new GaiaGeoReader();
+            PreparedPolygon polygon = null;
+            using (var comm = sqlConnection.CreateCommand())
             {
-                comm.CommandTimeout = 120;
+                comm.CommandText = "SELECT adm.id, adm.geom FROM admins adm WHERE adm.id=@relationId;";
+                comm.Parameters.AddWithValue("@relationId", relationId);
+                using var reader = comm.ExecuteReader();
+                {
+                    while (reader.Read())
+                    {
+                        if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                            return result;
+
+                        var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
+                        if (read == buffer.Length)
+                            throw new Exception("Too big byte array for buffer!");
+                        var buffer2 = new byte[read];
+                        Array.Copy(buffer, buffer2, read);
+                        polygon = new PreparedPolygon((IPolygonal)gaiaReader.Read(buffer2));
+                    }
+                }
+            }
+
+            if (polygon == null)
+                return result;
+
+            using (var comm = sqlConnection.CreateCommand(@"SELECT adm.id, adm.geom FROM admins adm, admins country WHERE 
+                                                           country.id = @relationId AND
+                                                           adm.adminlevel = @adminLevel AND
+                                                           adm.rowid IN (SELECT ROWID FROM SpatialIndex WHERE f_table_name='admins' AND search_frame=country.geom);"))
+            {
                 comm.Parameters.AddWithValue("@relationId", relationId);
                 comm.Parameters.AddWithValue("@adminLevel", adminLevel);
                 using var reader = comm.ExecuteReader();
                 {
-                    var result = new List<long>();
                     while (reader.Read())
                     {
-                        result.Add(reader.GetInt64(0));
+                        if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                            continue;
+                        var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
+                        if (read == buffer.Length)
+                            throw new Exception("Too big byte array for buffer!");
+                        var buffer2 = new byte[read];
+                        Array.Copy(buffer, buffer2, read);
+                        var adminGeometry = gaiaReader.Read(buffer2);
+                        if (polygon.Intersects(adminGeometry))
+                        {
+                            if (polygon.Contains(adminGeometry))
+                            {
+                                result.Add(reader.GetInt64(0));
+                            }
+                            else if (polygon.Overlaps(adminGeometry))
+                            {
+                                result.Add(reader.GetInt64(0));
+                            }
+                        }
                     }
                     return result;
                 }
@@ -501,29 +561,69 @@ namespace OsmNightWatch
         {
             if (relevantAdmins.Count == 0)
                 return new List<(long, int)>();
-            using (var comm = dataSource.CreateCommand($@"
-SELECT country.id, adm.adminlevel
-FROM admins adm
-INNER JOIN admins country ON 
-   (country.geom && adm.geom AND ST_Relate(country.geom, adm.geom, '2********'))
-WHERE country.id in ({string.Join(",", allCountries)}) and adm.id in ({string.Join(",", relevantAdmins)})"))
+
+            byte[] buffer = new byte[15 * 1024 * 1024];
+            var gaiaReader = new GaiaGeoReader();
+            STRtree<(long CountryId, PreparedPolygon Polygon)> tree = new STRtree<(long CountryId, PreparedPolygon Polygon)>();
+            using (var comm = sqlConnection.CreateCommand())
             {
-                comm.CommandTimeout = 120;
+                comm.CommandText = $"SELECT adm.id, adm.geom FROM admins adm WHERE adm.id in ({string.Join(",", allCountries)});";
                 using var reader = comm.ExecuteReader();
                 {
-                    var result = new List<(long CountryId, int adminLevel)>();
                     while (reader.Read())
                     {
-                        result.Add((reader.GetInt64(0), reader.GetInt32(1)));
+                        if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                            continue;
+
+                        var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
+                        if (read == buffer.Length)
+                            throw new Exception("Too big byte array for buffer!");
+                        var buffer2 = new byte[read];
+                        Array.Copy(buffer, buffer2, read);
+                        var polygon = new PreparedPolygon((IPolygonal)gaiaReader.Read(buffer2));
+                        tree.Insert(polygon.Geometry.EnvelopeInternal, (reader.GetInt64(0), polygon));
                     }
-                    return result;
                 }
             }
+
+            var result = new HashSet<(long CountryId, int adminLevel)>();
+            using (var comm = sqlConnection.CreateCommand($"SELECT adm.adminLevel, adm.geom FROM admins adm WHERE adm.id in ({string.Join(",", relevantAdmins)})"))
+            {
+                using var reader = comm.ExecuteReader();
+                {
+                    while (reader.Read())
+                    {
+                        if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                            continue;
+                        var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
+                        if (read == buffer.Length)
+                            throw new Exception("Too big byte array for buffer!");
+                        var buffer2 = new byte[read];
+                        Array.Copy(buffer, buffer2, read);
+                        var adminGeometry = gaiaReader.Read(buffer2);
+                        foreach (var (countryId, polygon) in tree.Query(adminGeometry.EnvelopeInternal))
+                        {
+                            if (polygon.Intersects(adminGeometry))
+                            {
+                                if (polygon.Contains(adminGeometry))
+                                {
+                                    result.Add((countryId, reader.GetInt32(0)));
+                                }
+                                else if (polygon.Overlaps(adminGeometry))
+                                {
+                                    result.Add((countryId, reader.GetInt32(0)));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return result.ToList();
         }
 
         public bool DoesCountryExist(long relationId)
         {
-            using (var comm = dataSource.CreateCommand("SELECT id FROM admins WHERE id=@relationId and geom IS NOT NULL"))
+            using (var comm = sqlConnection.CreateCommand("SELECT id FROM admins WHERE id=@relationId and geom IS NOT NULL"))
             {
                 comm.Parameters.AddWithValue("@relationId", relationId);
                 using var reader = comm.ExecuteReader();
@@ -581,8 +681,7 @@ WHERE country.id in ({string.Join(",", allCountries)}) and adm.id in ({string.Jo
 
         public IEnumerable<(long RelationId, string name, int adminLevel, string reason)> GetBrokenAdmins()
         {
-
-            using (var comm = dataSource.CreateCommand("SELECT id, friendlyname, adminlevel, reason FROM admins WHERE geom IS NULL"))
+            using (var comm = sqlConnection.CreateCommand("SELECT id, friendlyname, adminlevel, reason FROM admins WHERE geom IS NULL"))
             {
                 using var reader = comm.ExecuteReader();
                 {

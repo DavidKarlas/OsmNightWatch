@@ -1,4 +1,5 @@
-﻿using OsmNightWatch;
+﻿using MonoTorrent.Client;
+using OsmNightWatch;
 using OsmNightWatch.Analyzers;
 using OsmNightWatch.Analyzers.AdminCountPerCountry;
 using OsmNightWatch.Analyzers.BrokenCoastline;
@@ -7,14 +8,33 @@ using OsmNightWatch.PbfParsing;
 using OsmSharp.Changesets;
 using OsmSharp.Replication;
 using System.IO.Compression;
+using System.Text.Json;
 using System.Xml.Serialization;
 
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
 
-Log("Hello world");
+var path = Directory.GetFiles(".", "planet-*.osm.pbf").OrderBy(f => f).LastOrDefault();
+if (path == null || !PbfIndexBuilder.DoesIndexExist(path))
+{
+    using var engine = new ClientEngine();
+    using var torrentStream = await httpClient.GetStreamAsync("https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf.torrent");
+    using var memoryStream = new MemoryStream();
+    await torrentStream.CopyToAsync(memoryStream);
+    memoryStream.Position = 0;
+    await engine.AddAsync(MonoTorrent.Torrent.Load(memoryStream), Directory.GetCurrentDirectory());
+    await engine.StartAllAsync();
+    while (engine.IsRunning)
+    {
+        var torrent = engine.Torrents.Single();
+        Console.WriteLine($"Downloading {engine.Torrents.Single().Files.Single().Path} {torrent.Progress:0.00}% with speed {torrent.Monitor.DownloadRate / 1024.0 / 1024.0:0.00} MB/s.");
+        if (torrent.Complete)
+            break;
+        await Task.Delay(10_000);
+    }
+    path = engine.Torrents.Single().Files.Single().FullPath;
+}
 
-var path = @"C:\COSMOS\planet-230508.osm.pbf";
 
 using var database = new KeyValueDatabase(Path.GetFullPath("NightWatchDatabase"));
 database.Initialize();

@@ -1,5 +1,6 @@
 ﻿using OsmNightWatch.PbfParsing;
 using System.Collections.Concurrent;
+using System.Data.SQLite;
 
 namespace OsmNightWatch
 {
@@ -12,6 +13,20 @@ namespace OsmNightWatch
             if (lastNodesWithMeta.TimeStamp is not DateTime datetime)
                 throw new NotSupportedException();
             return datetime;
+        }
+
+        public static void ExecuteNonQuery(this SQLiteConnection connection, string commandText)
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = commandText;
+            command.ExecuteNonQuery();
+        }
+
+        public static SQLiteCommand CreateCommand(this SQLiteConnection connection, string commandText)
+        {
+            var command = connection.CreateCommand();
+            command.CommandText = commandText;
+            return command;
         }
 
         public static void BatchLoad(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource osmSource, bool ways, bool nodes)

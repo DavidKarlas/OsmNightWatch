@@ -263,7 +263,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
         return newState;
     }
 
-    private StateOfTheAdmins CreateCurrentState(StateOfTheAdmins expectedState)
+    public  StateOfTheAdmins CreateCurrentState(StateOfTheAdmins expectedState)
     {
         var newState = new StateOfTheAdmins();
         foreach (var expectedCountry in expectedState.Countries)
