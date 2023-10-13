@@ -7,90 +7,71 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
     {
         class Graph
         {
-            public Dictionary<long, Way> FirstNodes = new();
-            public Dictionary<long, Way> LastNodes = new();
-            public Dictionary<long, List<Way>> DuplicateFirstNodes = new(); 
-            public Dictionary<long, List<Way>> DuplicateLastNodes = new();
+            public Dictionary<long, (long wayId, long firstNode, long lastNode)> FirstNodes = new();
+            public Dictionary<long, (long wayId, long firstNode, long lastNode)> LastNodes = new();
+            public Dictionary<long, List<(long wayId, long firstNode, long lastNode)>> DuplicateFirstNodes = new();
+            public Dictionary<long, List<(long wayId, long firstNode, long lastNode)>> DuplicateLastNodes = new();
         }
 
-        public (List<(long nodeId, int issueDetails)>,List<(Way way, int issueDetails)>) Visit(IEnumerable<OsmGeo> coastline)
+        public (List<(long nodeId, string issueDetails)>, List<(long wayId, string issueDetails)>) Visit(IEnumerable<(uint id, long firstNode, long lastNode)> coastline)
         {
             Graph graph = new();
-            List<(long nodeId, int detailsNum)> issueNodes = new();
-            List<(Way way, int detailsNum)> issueWays = new();
+            List<(long nodeId, string issueDetails)> issueNodes = new();
+            List<(long wayId, string issueDetails)> issueWays = new();
 
             // Create graph for coastline
-            foreach (var line in coastline)
+            foreach (var (wayId, first, last) in coastline)
             {
-                if (line is Way way)
+                // Check if start or end nodes already exist
+                bool foundDuplicateFirst = false;
+                bool foundDuplicateLast = false;
+
+                if (graph.FirstNodes.ContainsKey(first))
                 {
-                    var nodes = way.Nodes;
-                    long first = nodes[0];
-                    long last = nodes[nodes.Length - 1];
-                    
-                    if (first == last)
-                    {
-                        // Check if way doesn't form a proper ring
-                        if (nodes.Length < 4) 
-                        {
-                            issueWays.Add((way, 3));
-                        }
+                    var ways = new List<(long wayId, long firstNode, long lastNode)>() { (wayId, first, last), graph.FirstNodes[first] };
+                    graph.DuplicateFirstNodes.Add(first, ways);
+                    foundDuplicateFirst = true;
+                }
 
-                    }
-                    else
-                    {
-                        // Check if start or end nodes already exist
-                        bool foundDuplicateFirst = false;
-                        bool foundDuplicateLast = false;
-                        
-                        if (graph.FirstNodes.ContainsKey(first))
-                        {
-                            List<Way> ways = new() { way, graph.FirstNodes[first] };
-                            graph.DuplicateFirstNodes.Add(first, ways);
-                            foundDuplicateFirst = true;
-                        }
+                if (graph.LastNodes.ContainsKey(last))
+                {
+                    var ways = new List<(long wayId, long firstNode, long lastNode)>() { (wayId, first, last), graph.LastNodes[last] };
+                    graph.DuplicateLastNodes.Add(last, ways);
+                    foundDuplicateLast = true;
+                }
 
-                        if (graph.LastNodes.ContainsKey(last))
-                        {
-                            List<Way> ways = new() { way, graph.LastNodes[last] };
-                            graph.DuplicateLastNodes.Add(last, ways);
-                            foundDuplicateLast = true;
-                        }
+                // Remove start or ends if they already have a pair
+                if (graph.FirstNodes.ContainsKey(last))
+                {
+                    graph.FirstNodes.Remove(last);
+                }
+                else if (!foundDuplicateLast)
+                {
+                    graph.LastNodes.Add(last, (wayId, first, last));
+                }
 
-                        // Remove start or ends if they already have a pair
-                        if (graph.FirstNodes.ContainsKey(last))
-                        {
-                            graph.FirstNodes.Remove(last);
-                        }
-                        else if (!foundDuplicateLast)
-                        {
-                            graph.LastNodes.Add(last, way);
-                        }
-
-                        if (graph.LastNodes.ContainsKey(first))
-                        {
-                            graph.LastNodes.Remove(first);
-                        }
-                        else if(!foundDuplicateFirst)
-                        {
-                            graph.FirstNodes.Add(first, way);
-                        }
-                    }
+                if (graph.LastNodes.ContainsKey(first))
+                {
+                    graph.LastNodes.Remove(first);
+                }
+                else if (!foundDuplicateFirst)
+                {
+                    graph.FirstNodes.Add(first, (wayId, first, last));
                 }
             }
 
             // Find ways with wrong direction
             issueWays = issueWays.Concat(FindWaysWrongDirection(graph)).ToList();
-            
+
             // Find unconnected nodes in the coastline
             issueNodes = FindUnconnectedNodes(graph);
 
-            return (issueNodes,issueWays);
+            return (issueNodes, issueWays);
         }
 
-        List<(Way way, int issueDetails)> FindWaysWrongDirection(Graph graph)
+        List<(long wayId, string issueDetails)> FindWaysWrongDirection(Graph graph)
         {
-            List<(Way way, int issueDetails)> found = new();
+            List<(long wayId, string issueDetails)> found = new();
             if (graph.DuplicateFirstNodes.Count > 0)
             {
                 // TODO: Add part to check if there are two connected ways with wrong direction
@@ -98,10 +79,11 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                 {
                     foreach (var nodeLast in graph.DuplicateLastNodes.Keys)
                     {
-                        var commonWay = graph.DuplicateFirstNodes[nodeFirst].Intersect(graph.DuplicateLastNodes[nodeLast]).FirstOrDefault();
-                        if (commonWay != null)
+                        var listOfWayIds = graph.DuplicateFirstNodes[nodeFirst].Select(p => p.wayId).Intersect(graph.DuplicateLastNodes[nodeLast].Select(p => p.wayId)).ToList();
+                        if (listOfWayIds.Count > 0)
                         {
-                            found.Add((commonWay, 2));
+                            var wayId = listOfWayIds.First();
+                            found.Add((wayId, "Way with wrong direction"));
                             graph.FirstNodes.Remove(nodeFirst);
                             graph.LastNodes.Remove(nodeLast);
                         }
@@ -111,14 +93,14 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             return found;
         }
 
-        List<(long nodeId, int issueDetails)> FindUnconnectedNodes(Graph graph)
+        List<(long nodeId, string issueDetails)> FindUnconnectedNodes(Graph graph)
         {
-            List<(long nodeId, int issueDetails)> unconnectedNodes = new();
-            if(graph.FirstNodes.Count > 0)
+            List<(long nodeId, string issueDetails)> unconnectedNodes = new();
+            if (graph.FirstNodes.Count > 0)
             {
                 foreach (var node in graph.FirstNodes)
                 {
-                    unconnectedNodes.Add((node.Key, 1));
+                    unconnectedNodes.Add((node.Key, "Unconnected node in the coastline"));
                 }
             }
 
@@ -126,7 +108,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             {
                 foreach (var node in graph.LastNodes)
                 {
-                    unconnectedNodes.Add((node.Key, 1));
+                    unconnectedNodes.Add((node.Key, "Unconnected node in the coastline"));
                 }
             }
 

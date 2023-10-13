@@ -8,13 +8,13 @@ using OsmNightWatch.PbfParsing;
 using OsmSharp.Changesets;
 using OsmSharp.Replication;
 using System.IO.Compression;
-using System.Text.Json;
 using System.Xml.Serialization;
 
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
-
-var path = Directory.GetFiles(".", "planet-*.osm.pbf").OrderBy(f => f).LastOrDefault();
+var dataStoragePath = Path.GetFullPath("NightWatchDatabase");
+Directory.CreateDirectory(dataStoragePath);
+var path = Directory.GetFiles(dataStoragePath, "planet-*.osm.pbf").OrderBy(f => f).LastOrDefault();
 if (path == null || !PbfIndexBuilder.DoesIndexExist(path))
 {
     using var engine = new ClientEngine();
@@ -35,16 +35,14 @@ if (path == null || !PbfIndexBuilder.DoesIndexExist(path))
     path = engine.Torrents.Single().Files.Single().FullPath;
 }
 
-
-using var database = new KeyValueDatabase(Path.GetFullPath("NightWatchDatabase"));
-database.Initialize();
+using var database = new KeyValueDatabase(dataStoragePath);
 database.BeginTransaction();
 
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
 var analyzers = new IOsmAnalyzer[] {
-    new AdminCountPerCountryAnalyzer(database),
-    new BrokenCoastlineAnalyzer(database)
+    new AdminCountPerCountryAnalyzer(database, dataStoragePath),
+    new BrokenCoastlineAnalyzer(database, dataStoragePath)
 };
 
 var dbWithChanges = new OsmDatabaseWithReplicationData(pbfDb, database);
@@ -61,9 +59,10 @@ if (currentTimeStamp == null)
     Log("Storing relevant elements into LMDB.");
     dbWithChanges.StoreCache();
     Log("Finished storing relevant elements into LMDB.");
+    currentTimeStamp = Utils.GetLatestTimestampFromPbf(index);
+    database.SetTimestamp((DateTime)currentTimeStamp);
     database.CommitTransaction();
     Log("Committed transaction.");
-    currentTimeStamp = Utils.GetLatestTimestampFromPbf(index);
 }
 else
 {
