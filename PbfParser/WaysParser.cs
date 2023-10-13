@@ -150,7 +150,8 @@ namespace OsmNightWatch.PbfParsing
                 {
                     if (item.TagValues.Count == 0)
                     {
-                        stringIdFilters.Add(utf8ToIdMappings[item.TagKey], null);
+                        if (utf8ToIdMappings.TryGetValue(item.TagKey, out var val))
+                            stringIdFilters.Add(val, null);
                     }
                     else
                     {
