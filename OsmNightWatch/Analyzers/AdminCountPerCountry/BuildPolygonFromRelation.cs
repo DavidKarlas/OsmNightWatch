@@ -32,6 +32,7 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
             var innerWays = new List<Way>();
             var outerWays = new List<Way>();
             bool atLeastOneWay = false;
+            bool atLeastOneMemberWithoutRole = false;
             foreach (var member in relation.Members)
             {
                 switch (member.Role)
@@ -51,13 +52,19 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
                         }
                         break;
                     case "":
-                        return (MultiPolygon.Empty, new List<Way>(0), "Member without role");
+                        atLeastOneMemberWithoutRole = true;
+                        break;
                 }
             }
 
             if (!atLeastOneWay)
             {
                 return (MultiPolygon.Empty, new List<Way>(0), "Missing ways");
+            }
+
+            if (atLeastOneMemberWithoutRole)
+            {
+                return (MultiPolygon.Empty, new List<Way>(0), "Member without role");
             }
 
             if (outerWays.Count == 0)
