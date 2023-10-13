@@ -1,19 +1,90 @@
-﻿using OsmNightWatch.Lib;
+﻿using NetTopologySuite.Geometries.Prepared;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
+using OsmNightWatch.Lib;
 using OsmNightWatch.PbfParsing;
+using System.Collections.Concurrent;
+using System.Data.SQLite;
 using System.Text.Json;
+using NetTopologySuite.Index.Strtree;
 
 namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 
-public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
+public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
 {
-
-    RelationChangesTracker relationChangesTracker;
+    SQLiteConnection sqlConnection;
     private KeyValueDatabase database;
 
-    public AdminCountPerCountryAnalyzer(KeyValueDatabase database)
+    public AdminCountPerCountryAnalyzer(KeyValueDatabase database, string storePath)
     {
         this.database = database;
-        relationChangesTracker = database.ReadRelationChangesTracker();
+        sqlConnection = new SQLiteConnection($"Data Source={Path.Combine(storePath, "sqlite.db")};Version=3;");
+        Initialize();
+    }
+
+    public void Initialize()
+    {
+        sqlConnection.Open();
+        sqlConnection.EnableExtensions(true);
+        sqlConnection.LoadExtension("mod_spatialite");
+        using var existsCommand = sqlConnection.CreateCommand("SELECT name FROM sqlite_master WHERE type='table' AND name='Admins';");
+        if (existsCommand.ExecuteScalar() == null)
+        {
+            using var transaction = sqlConnection.BeginTransaction();
+            sqlConnection.ExecuteNonQuery("SELECT InitSpatialMetaData();");
+            sqlConnection.ExecuteNonQuery("CREATE TABLE Admins (Id int PRIMARY KEY, FriendlyName text, AdminLevel int, Reason text NULL);");
+            sqlConnection.ExecuteNonQuery("SELECT AddGeometryColumn('Admins', 'geom',  4326, 'GEOMETRY', 'XY');");
+            sqlConnection.ExecuteNonQuery("SELECT CreateSpatialIndex('Admins', 'geom');");
+            transaction.Commit();
+        }
+    }
+
+    public void DeleteAdmin(long id)
+    {
+        lock (sqlConnection)
+        {
+            sqlConnection.ExecuteNonQuery($"DELETE FROM Admins WHERE Id = {id}");
+        }
+    }
+
+    public void EmptyUpsertAdmins(object param)
+    {
+        var (adminsToUpsert, adminsToUpsertAbortOrCommitTask) = ((BlockingCollection<(long id, string friendlyName, int adminLevel, byte[]? polygon, string? reason)>, TaskCompletionSource<bool>))param;
+        var transaction = sqlConnection.BeginTransaction();
+        (long id, string friendlyName, int adminLevel, byte[]? polygon, string? reason) blob;
+        while (!adminsToUpsert.IsCompleted)
+        {
+            if (!adminsToUpsert.TryTake(out blob, 100))
+            {
+                continue;
+            }
+            var (id, friendlyName, adminLevel, polygon, reason) = blob;
+            using (var comm = sqlConnection.CreateCommand("INSERT INTO Admins (Id, FriendlyName, AdminLevel, geom, reason) VALUES (@id, @friendlyName, @adminLevel, @geom, @reason) ON CONFLICT (Id) DO UPDATE SET geom = @geom, FriendlyName = @friendlyName, AdminLevel = @adminLevel, Reason = @reason"))
+            {
+                comm.Parameters.AddWithValue("id", id);
+                comm.Parameters.AddWithValue("friendlyName", friendlyName);
+                comm.Parameters.AddWithValue("adminLevel", adminLevel);
+                if (polygon != null)
+                {
+                    comm.Parameters.AddWithValue("geom", polygon);
+                }
+                else
+                {
+                    comm.Parameters.AddWithValue("geom", DBNull.Value);
+                }
+                comm.Parameters.AddWithValue("reason", reason ?? (object)DBNull.Value);
+                comm.ExecuteNonQuery();
+            }
+        }
+        var commitTransaction = adminsToUpsertAbortOrCommitTask.Task.Result;
+        if (commitTransaction)
+        {
+            transaction.Commit();
+        }
+        else
+        {
+            transaction.Dispose();
+        }
     }
 
     public string AnalyzerName => nameof(AdminCountPerCountryAnalyzer);
@@ -32,47 +103,55 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
 
     private IEnumerable<IssueData> UpdateRelations((uint Id, Relation Relation)[] relevantThings, IOsmGeoSource newOsmSource)
     {
-        Parallel.ForEach(relevantThings, new ParallelOptions() {
-            MaxDegreeOfParallelism = 32
-        }, (admin) => {
-            // Drop admin from database if it was deleted or doesn't meet admin criteria
-            if (admin.Relation == null || admin.Relation.Tags == null || !FilterSettings.Filters.Single().Matches(admin.Relation))
-            {
-                database.DeleteAdmin(admin.Id);
-                return;
-            }
-            var result = BuildPolygonFromRelation.BuildPolygon(admin.Relation, newOsmSource);
-            relationChangesTracker.AddRelation(admin.Id, result.Ways);
-            NetTopologySuite.Geometries.Geometry? geom;
-            if (result.reason != null)
-            {
-                geom = null;
-            }
-            else if (result.Polygon.IsEmpty)
-            {
-                geom = null;
-                result.reason = "Polygon is broken.";
-            }
-            else if (!result.Polygon.IsValid)
-            {
-                geom = null;
-                result.reason = "Polygon is not valid.";
-            }
-            else
-            {
-                geom = result.Polygon;
-            }
-            if (!admin.Relation.Tags.TryGetValue("name:en", out var friendlyName))
-            {
-                if (!admin.Relation.Tags.TryGetValue("name", out friendlyName))
+        StartAdminsUpsertTransaction();
+        try
+        {
+            Parallel.ForEach(relevantThings, new ParallelOptions() {
+                MaxDegreeOfParallelism = 32
+            }, (admin) => {
+                // Drop admin from database if it was deleted or doesn't meet admin criteria
+                if (admin.Relation == null || admin.Relation.Tags == null || !FilterSettings.Filters.Single().Matches(admin.Relation))
                 {
-                    friendlyName = "";
+                    DeleteAdmin(admin.Id);
+                    return;
                 }
-            }
-            database.UpsertAdmin(admin.Id, friendlyName, int.Parse(admin.Relation.Tags!["admin_level"]), geom, result.reason);
-        });
-
-        database.WriteRelationChangesTracker(relationChangesTracker);
+                var result = BuildPolygonFromRelation.BuildPolygon(admin.Relation, newOsmSource);
+                database.RelationChangesTracker.AddRelationToTrack(admin.Id, result.Ways);
+                NetTopologySuite.Geometries.Geometry? geom;
+                if (result.reason != null)
+                {
+                    geom = null;
+                }
+                else if (result.Polygon.IsEmpty)
+                {
+                    geom = null;
+                    result.reason = "Polygon is broken.";
+                }
+                else if (!result.Polygon.IsValid)
+                {
+                    geom = null;
+                    result.reason = "Polygon is not valid.";
+                }
+                else
+                {
+                    geom = result.Polygon;
+                }
+                if (!admin.Relation.Tags.TryGetValue("name:en", out var friendlyName))
+                {
+                    if (!admin.Relation.Tags.TryGetValue("name", out friendlyName))
+                    {
+                        friendlyName = "";
+                    }
+                }
+                UpsertAdmin(admin.Id, friendlyName, int.Parse(admin.Relation.Tags!["admin_level"]), geom, result.reason);
+            });
+        }
+        catch
+        {
+            EndAdminsUpsertTransaction(false);
+            throw;
+        }
+        EndAdminsUpsertTransaction(true);
 
         var expectedState = JsonSerializer.Deserialize<StateOfTheAdmins>(new HttpClient().GetStringAsync("https://davidupload.blob.core.windows.net/data/current.json").Result, new JsonSerializerOptions() {
             ReadCommentHandling = JsonCommentHandling.Skip
@@ -87,7 +166,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
             currentState = UpdateCurrentState(currentState, relevantThings);
         }
 
-        foreach (var (relationId, name, adminLevel, reason) in database.GetBrokenAdmins())
+        foreach (var (relationId, name, adminLevel, reason) in GetBrokenAdmins())
         {
             if (reason == "Missing ways")
             {
@@ -168,11 +247,11 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
 
     StateOfTheAdmins? currentState;
 
-    public IEnumerable<IssueData> ProcessChangeset(MergedChangeset changeSet, IOsmGeoSource newOsmSource)
+    public IEnumerable<IssueData> ProcessChangeset(MergedChangeset changeSet, IOsmGeoBatchSource newOsmSource)
     {
         var filter = FilterSettings.Filters.Single();
 
-        var changedRelations = relationChangesTracker.GetChangedRelations(changeSet);
+        var changedRelations = database.RelationChangesTracker.GetChangedRelations(changeSet);
         foreach (var relation in changeSet.Relations.Values)
         {
             if (relation == null)
@@ -211,7 +290,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
             }
         }
 
-        foreach (var (CountryId, adminLevel) in database.GetCountryAndLevelForAdmins(relevantThings.Select((i) => i.Id).Except(countries.Keys).ToList(), countries.Keys.ToList()))
+        foreach (var (CountryId, adminLevel) in GetCountryAndLevelForAdmins(relevantThings.Select((i) => i.Id).Except(countries.Keys).ToList(), countries.Keys.ToList()))
         {
             thingsThatNeedReevaluation.Add(((uint)CountryId, adminLevel));
         }
@@ -226,7 +305,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
                 RelationId = oldCountry.RelationId
             };
             newState.Countries.Add(currentCountry);
-            if (!database.DoesCountryExist(oldCountry.RelationId))
+            if (!DoesCountryExist(oldCountry.RelationId))
             {
                 foreach (var expectedAdminLevelGroup in oldCountry.Admins)
                 {
@@ -242,7 +321,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
 
                 if (thingsThatNeedReevaluation.Contains((currentCountry.RelationId, adminLevel)))
                 {
-                    var actualAdmins = database.GetCountryAdmins(oldCountry.RelationId, adminLevel);
+                    var actualAdmins = GetCountryAdmins(oldCountry.RelationId, adminLevel);
                     actualAdmins.Sort();
                     currentCountry.Admins.Add(expectedAdminLevelGroup.Key, actualAdmins);
                     foreach (var item in actualAdmins)
@@ -263,35 +342,249 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer
         return newState;
     }
 
-    public  StateOfTheAdmins CreateCurrentState(StateOfTheAdmins expectedState)
+    public StateOfTheAdmins CreateCurrentState(StateOfTheAdmins expectedState)
     {
         var newState = new StateOfTheAdmins();
-        foreach (var expectedCountry in expectedState.Countries)
-        {
+        Parallel.ForEach(expectedState.Countries, new ParallelOptions() { MaxDegreeOfParallelism = 16 }, (expectedCountry) => {
             var currentCountry = new Country() {
                 EnglishName = expectedCountry.EnglishName,
                 Iso2 = expectedCountry.Iso2,
                 Iso3 = expectedCountry.Iso3,
                 RelationId = expectedCountry.RelationId
             };
-            newState.Countries.Add(currentCountry);
-            currentCountry.IsValid = database.DoesCountryExist(expectedCountry.RelationId);
+            lock (newState)
+            {
+                newState.Countries.Add(currentCountry);
+            }
+            currentCountry.IsValid = DoesCountryExist(expectedCountry.RelationId);
             foreach (var expectedAdminLevelGroup in expectedCountry.Admins)
             {
                 int adminLevel = int.Parse(expectedAdminLevelGroup.Key);
-                var actualAdmins = currentCountry.IsValid ? database.GetCountryAdmins(expectedCountry.RelationId, adminLevel) : new(0);
+                var actualAdmins = currentCountry.IsValid ? GetCountryAdmins(expectedCountry.RelationId, adminLevel) : new(0);
                 currentCountry.Admins.Add(expectedAdminLevelGroup.Key, actualAdmins);
                 actualAdmins.Sort();
                 foreach (var item in actualAdmins)
                 {
-                    if (!newState.AdminsToCountry.TryGetValue((uint)item, out var memberOf))
+                    var memberOf = newState.AdminsToCountry.GetOrAdd((uint)item, (_) => new());
+                    lock (memberOf)
                     {
-                        newState.AdminsToCountry[(uint)item] = memberOf = new();
+                        memberOf.Add((currentCountry.RelationId, adminLevel));
                     }
-                    memberOf.Add((currentCountry.RelationId, adminLevel));
+                }
+            }
+        });
+        return newState;
+    }
+
+    public void Dispose()
+    {
+        sqlConnection.Close();
+    }
+
+    public List<(long CountryId, int adminLevel)> GetCountryAndLevelForAdmins(List<uint> relevantAdmins, List<uint> allCountries)
+    {
+        if (relevantAdmins.Count == 0)
+            return new List<(long, int)>();
+
+        byte[] buffer = new byte[15 * 1024 * 1024];
+        var gaiaReader = new GaiaGeoReader();
+        STRtree<(long CountryId, PreparedPolygon Polygon)> tree = new STRtree<(long CountryId, PreparedPolygon Polygon)>();
+        using (var comm = sqlConnection.CreateCommand())
+        {
+            comm.CommandText = $"SELECT adm.id, adm.geom FROM admins adm WHERE adm.id in ({string.Join(",", allCountries)});";
+            using var reader = comm.ExecuteReader();
+            {
+                while (reader.Read())
+                {
+                    if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                        continue;
+
+                    var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
+                    if (read == buffer.Length)
+                        throw new Exception("Too big byte array for buffer!");
+                    var buffer2 = new byte[read];
+                    Array.Copy(buffer, buffer2, read);
+                    var polygon = new PreparedPolygon((IPolygonal)gaiaReader.Read(buffer2));
+                    tree.Insert(polygon.Geometry.EnvelopeInternal, (reader.GetInt64(0), polygon));
                 }
             }
         }
-        return newState;
+
+        var result = new HashSet<(long CountryId, int adminLevel)>();
+        using (var comm = sqlConnection.CreateCommand($"SELECT adm.adminLevel, adm.geom FROM admins adm WHERE adm.id in ({string.Join(",", relevantAdmins)})"))
+        {
+            using var reader = comm.ExecuteReader();
+            {
+                while (reader.Read())
+                {
+                    if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                        continue;
+                    var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
+                    if (read == buffer.Length)
+                        throw new Exception("Too big byte array for buffer!");
+                    var buffer2 = new byte[read];
+                    Array.Copy(buffer, buffer2, read);
+                    var adminGeometry = gaiaReader.Read(buffer2);
+                    foreach (var (countryId, polygon) in tree.Query(adminGeometry.EnvelopeInternal))
+                    {
+                        if (polygon.Intersects(adminGeometry))
+                        {
+                            if (polygon.Contains(adminGeometry))
+                            {
+                                result.Add((countryId, reader.GetInt32(0)));
+                            }
+                            else if (polygon.Overlaps(adminGeometry))
+                            {
+                                result.Add((countryId, reader.GetInt32(0)));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return result.ToList();
     }
+
+    BlockingCollection<(long id, string friendlyName, int adminLevel, byte[]? polygon, string? reason)>? AdminsToUpsert;
+    TaskCompletionSource<bool> AdminsToUpsertAbortOrCommitTask;
+
+    public void StartAdminsUpsertTransaction()
+    {
+        if (AdminsToUpsert != null)
+        {
+            throw new Exception();
+        }
+        var adminsToUpsert = AdminsToUpsert = new(128);
+        var adminsToUpsertAbortOrCommitTask = AdminsToUpsertAbortOrCommitTask = new TaskCompletionSource<bool>();
+        Task.Run(() => {
+            EmptyUpsertAdmins((adminsToUpsert, adminsToUpsertAbortOrCommitTask));
+        });
+    }
+
+    public void EndAdminsUpsertTransaction(bool commitTransaction)
+    {
+        if (AdminsToUpsert == null)
+        {
+            throw new Exception();
+        }
+        AdminsToUpsert.CompleteAdding();
+        AdminsToUpsert = null;
+        AdminsToUpsertAbortOrCommitTask.SetResult(commitTransaction);
+        AdminsToUpsertAbortOrCommitTask = null;
+    }
+
+    static GaiaGeoWriter gaiaWriter = new GaiaGeoWriter();
+
+    public void UpsertAdmin(long id, string friendlyName, int adminLevel, Geometry? polygon, string? reason)
+    {
+        if (AdminsToUpsert == null)
+        {
+            throw new Exception();
+        }
+        byte[]? data = null;
+        if (polygon != null)
+        {
+            polygon.SRID = 4326;
+            data = gaiaWriter.Write(polygon);
+        }
+        AdminsToUpsert.Add((id, friendlyName, adminLevel, data, reason));
+    }
+
+    public IEnumerable<(long RelationId, string name, int adminLevel, string reason)> GetBrokenAdmins()
+    {
+        using (var comm = sqlConnection.CreateCommand("SELECT id, friendlyname, adminlevel, reason FROM admins WHERE geom IS NULL"))
+        {
+            using var reader = comm.ExecuteReader();
+            {
+                while (reader.Read())
+                {
+                    yield return (reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2), reader.GetString(3));
+                }
+            }
+        }
+    }
+
+    public bool DoesCountryExist(long relationId)
+    {
+        using (var comm = sqlConnection.CreateCommand("SELECT id FROM admins WHERE id=@relationId and geom IS NOT NULL"))
+        {
+            comm.Parameters.AddWithValue("@relationId", relationId);
+            using var reader = comm.ExecuteReader();
+            {
+                while (reader.Read())
+                {
+                    return true;
+                }
+                return false;
+            }
+        }
+    }
+
+    public List<long> GetCountryAdmins(long relationId, int adminLevel)
+    {
+        var result = new List<long>();
+        byte[] buffer = new byte[15 * 1024 * 1024];
+        var gaiaReader = new GaiaGeoReader();
+        PreparedPolygon polygon = null;
+        using (var comm = sqlConnection.CreateCommand())
+        {
+            comm.CommandText = "SELECT adm.id, adm.geom FROM admins adm WHERE adm.id=@relationId;";
+            comm.Parameters.AddWithValue("@relationId", relationId);
+            using var reader = comm.ExecuteReader();
+            {
+                while (reader.Read())
+                {
+                    if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                        return result;
+
+                    var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
+                    if (read == buffer.Length)
+                        throw new Exception("Too big byte array for buffer!");
+                    var buffer2 = new byte[read];
+                    Array.Copy(buffer, buffer2, read);
+                    polygon = new PreparedPolygon((IPolygonal)gaiaReader.Read(buffer2));
+                }
+            }
+        }
+
+        if (polygon == null)
+            return result;
+
+        using (var comm = sqlConnection.CreateCommand(@"SELECT adm.id, adm.geom FROM admins adm, admins country WHERE 
+                                                           country.id = @relationId AND
+                                                           adm.adminlevel = @adminLevel AND
+                                                           adm.rowid IN (SELECT ROWID FROM SpatialIndex WHERE f_table_name='admins' AND search_frame=country.geom);"))
+        {
+            comm.Parameters.AddWithValue("@relationId", relationId);
+            comm.Parameters.AddWithValue("@adminLevel", adminLevel);
+            using var reader = comm.ExecuteReader();
+            {
+                while (reader.Read())
+                {
+                    if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                        continue;
+                    var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
+                    if (read == buffer.Length)
+                        throw new Exception("Too big byte array for buffer!");
+                    var buffer2 = new byte[read];
+                    Array.Copy(buffer, buffer2, read);
+                    var adminGeometry = gaiaReader.Read(buffer2);
+                    if (polygon.Intersects(adminGeometry))
+                    {
+                        if (polygon.Contains(adminGeometry))
+                        {
+                            result.Add(reader.GetInt64(0));
+                        }
+                        else if (polygon.Overlaps(adminGeometry))
+                        {
+                            result.Add(reader.GetInt64(0));
+                        }
+                    }
+                }
+                return result;
+            }
+        }
+    }
+
+
 }

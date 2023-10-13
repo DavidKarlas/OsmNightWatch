@@ -1,4 +1,5 @@
 ﻿using NetTopologySuite.Geometries.Prepared;
+using System.Collections.Concurrent;
 using System.Text.Json.Serialization;
 
 namespace OsmNightWatch.Analyzers.AdminCountPerCountry
@@ -18,7 +19,7 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
 
     public class StateOfTheAdmins
     {
-        public StateOfTheAdmins(Dictionary<uint, HashSet<(uint CountryId, int AdminLevel)>>? adminsToCountry = null)
+        public StateOfTheAdmins(ConcurrentDictionary<uint, HashSet<(uint CountryId, int AdminLevel)>>? adminsToCountry = null)
         {
             AdminsToCountry = adminsToCountry ?? new();
         }
@@ -26,6 +27,6 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
         public List<Country> Countries { get; set; } = new List<Country>();
 
         [JsonIgnore]
-        public Dictionary<uint, HashSet<(uint CountryId, int AdminLevel)>> AdminsToCountry { get; }
+        public ConcurrentDictionary<uint, HashSet<(uint CountryId, int AdminLevel)>> AdminsToCountry { get; }
     }
 }

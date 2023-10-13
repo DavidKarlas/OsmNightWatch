@@ -8,7 +8,7 @@ public class RelationChangesTracker
     public Dictionary<long, HashSet<uint>> NodeToWay = new();
     public Dictionary<uint, HashSet<uint>> WayToRelation = new();
     public HashSet<uint> Relations = new();
-    public HashSet<uint> PersistentRelations = new();
+    public HashSet<uint> TrackedRelations = new();
     private KeyValueDatabase database;
 
     public RelationChangesTracker(KeyValueDatabase database)
@@ -16,11 +16,11 @@ public class RelationChangesTracker
         this.database = database;
     }
 
-    public void AddRelation(uint relationId, List<Way> ways)
+    public void AddRelationToTrack(uint relationId, List<Way> ways)
     {
         lock (Relations)
         {
-            if (PersistentRelations.Add(relationId))
+            if (TrackedRelations.Add(relationId))
                 Relations.Add(relationId);
             foreach (var way in ways)
             {
@@ -47,9 +47,29 @@ public class RelationChangesTracker
         }
     }
 
-    public HashSet<uint> GetChangedRelations(MergedChangeset changeSet)
+    public void AddWaysToTrack(IEnumerable<Way> ways)
     {
-        var result = new HashSet<uint>();
+        lock (Relations)
+        {
+            foreach (var way in ways)
+            {
+                foreach (var node in way.Nodes)
+                {
+                    if (NodeToWay.TryGetValue(node, out var nodeToWayWays))
+                    {
+                        nodeToWayWays.Add((uint)way.Id!);
+                    }
+                    else
+                    {
+                        NodeToWay.Add(node, new HashSet<uint>() { (uint)way.Id! });
+                    }
+                }
+            }
+        }
+    }
+
+    public HashSet<uint> GetChangedWays(MergedChangeset changeSet)
+    {
         var waysSet = new HashSet<uint>();
         foreach (var node in changeSet.OsmNodes)
         {
@@ -69,6 +89,14 @@ public class RelationChangesTracker
             waysSet.Add((uint)way.Key);
         }
 
+        return waysSet;
+    }
+
+    public HashSet<uint> GetChangedRelations(MergedChangeset changeSet)
+    {
+        var result = new HashSet<uint>();
+        var waysSet = GetChangedWays(changeSet);
+
         foreach (var wayId in waysSet)
         {
             database.GetWayToRelation(wayId, result);
@@ -76,7 +104,7 @@ public class RelationChangesTracker
 
         foreach (var relation in changeSet.Relations.Keys)
         {
-            if (PersistentRelations.Contains(relation))
+            if (TrackedRelations.Contains(relation))
             {
                 result.Add(relation);
             }
