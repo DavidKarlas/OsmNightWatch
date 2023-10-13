@@ -26,7 +26,7 @@ namespace OsmNightWatch
         {
             var dbEnv = new LightningEnvironment(storePath);
             dbEnv.MaxDatabases = 10;
-            dbEnv.MapSize = 32L * 1024L * 1024L * 1024L;//16GB should be enough, I hope
+            dbEnv.MapSize = 128L * 1024L * 1024L * 1024L;//16GB should be enough, I hope
             dbEnv.Open();
             return dbEnv;
         }
