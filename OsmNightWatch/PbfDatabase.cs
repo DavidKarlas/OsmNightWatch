@@ -15,9 +15,9 @@ internal class PbfDatabase : IOsmValidateSource
 
     public (IReadOnlyCollection<Node> nodes, IReadOnlyCollection<Way> ways, IReadOnlyCollection<Relation> relations) BatchLoad(HashSet<long>? nodeIds = null, HashSet<long>? wayIds = null, HashSet<long>? relationIds = null)
     {
-        return (NodesParser.LoadNodes(nodeIds, index), WaysParser.LoadWays(wayIds , index), RelationsParser.LoadRelations(relationIds , index));
+        return (NodesParser.LoadNodes(nodeIds, index), WaysParser.LoadWays(wayIds, index), RelationsParser.LoadRelations(relationIds, index));
     }
-    
+
     public IEnumerable<OsmGeo> Filter(FilterSettings filterSettings)
     {
         foreach (var group in filterSettings.Filters.GroupBy(f => f.GeoType))
@@ -25,7 +25,12 @@ internal class PbfDatabase : IOsmValidateSource
             switch (group.Key)
             {
                 case OsmGeoType.Node:
-                    throw new NotImplementedException();
+                    foreach (var node in NodesParser.Parse(group, index))
+                    {
+                        //_ways[(long)way.Id!] = way;
+                        yield return node;
+                    }
+                    break;
                 case OsmGeoType.Way:
                     foreach (var way in WaysParser.Parse(group, index))
                     {

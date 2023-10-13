@@ -96,7 +96,7 @@ namespace OsmNightWatch
             return baseSource.Get(type, id);
         }
 
-        public (IReadOnlyCollection<Node> nodes, IReadOnlyCollection<Way> ways, IReadOnlyCollection<Relation> relations) BatchLoad(HashSet<long> nodeIds, HashSet<long> wayIds, HashSet<long> relationIds)
+        public (IReadOnlyCollection<Node> nodes, IReadOnlyCollection<Way> ways, IReadOnlyCollection<Relation> relations) BatchLoad(HashSet<long>? nodeIds, HashSet<long>? wayIds, HashSet<long>? relationIds)
         {
             var (nodes, ways, relations) = baseSource.BatchLoad(nodeIds, wayIds, relationIds);
             foreach (var node in nodes)

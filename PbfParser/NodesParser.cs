@@ -1,5 +1,6 @@
 ﻿using OsmSharp;
 using OsmSharp.IO.PBF;
+using OsmSharp.Tags;
 using System.Buffers;
 using System.Collections.Concurrent;
 using static OsmNightWatch.PbfParsing.ParsingHelper;
@@ -18,23 +19,109 @@ namespace OsmNightWatch.PbfParsing
             if (nodesToLoad == null || nodesToLoad.Count == 0)
                 return Array.Empty<Node>();
             var fileOffsets = index.CalculateFileOffsets(nodesToLoad, OsmGeoType.Node);
-            var nodeBags = new ConcurrentBag<Node>();
+            var nodesBag = new ConcurrentBag<Node>();
             ParallelParse(index.PbfPath, fileOffsets, (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
-                ParseNodes(nodeBags, relevantIds, readBuffer);
+                ParseNodes(relevantIds, (node) => {
+                    nodesBag.Add(node);
+                }, null, readBuffer);
             });
-            return nodeBags;
+
+            return nodesBag;
         }
 
-        private static void ParseNodes(ConcurrentBag<Node> nodeBags, HashSet<long>? nodesToLoad, byte[] readBuffer)
+        public static IEnumerable<Node> Parse(IEnumerable<ElementFilter> filters, PbfIndex index)
+        {
+            var indexFilters = new IndexedTagFilters(filters.Where(f => f.GeoType == OsmGeoType.Node).SelectMany(f => f.Tags));
+            var nodesQueue = new ConcurrentQueue<List<Node>>();
+            var task = Task.Run(() => ParallelParse(index.PbfPath, index.GetAllNodeFileOffsets().Select(o => (o, (HashSet<long>?)null)).ToList(),
+                (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
+                    var nodeBag = new List<Node>();
+                    ParseNodes(null, (node) => {
+                        nodeBag.Add(node);
+                    }, indexFilters, readBuffer);
+                    nodesQueue.Enqueue(nodeBag);
+                }));
+            while (task.IsCompleted == false || nodesQueue.Count > 0)
+            {
+                while (nodesQueue.TryDequeue(out var nodesBag))
+                {
+                    foreach (var node in nodesBag)
+                    {
+                        yield return node;
+                    }
+                }
+            }
+        }
+
+        public static void Process(Action<Node> action, IEnumerable<ElementFilter> filters, PbfIndex index)
+        {
+            var indexFilters = new IndexedTagFilters(filters.Where(f => f.GeoType == OsmGeoType.Node).SelectMany(f => f.Tags));
+            ParallelParse(index.PbfPath, index.GetAllNodeFileOffsets().Select(o => (o, (HashSet<long>?)null)).ToList(),
+                (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
+                    ParseNodes(null, action, indexFilters, readBuffer);
+                });
+        }
+
+        private static void ParseNodes(HashSet<long>? nodesToLoad, Action<Node> action, IndexedTagFilters? tagFilters, byte[] readBuffer)
         {
             ReadOnlySpan<byte> dataSpan = readBuffer;
-            Decompress(ref dataSpan, out var uncompressbuffer, out var uncompressedSpan, out var _);
+            Decompress(ref dataSpan, out var uncompressedBuffer, out var uncompressedSpan, out var uncompressedSize);
             var stringTableSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedSpan).size;
-            uncompressedSpan = uncompressedSpan.Slice(stringTableSize);
+            var stringTableTargetLength = uncompressedSpan.Length - stringTableSize;
+            var utf8ToIdMappings = new Dictionary<Memory<byte>, int>();
+            var stringSpans = new List<Memory<byte>>();
+            while (uncompressedSpan.Length > stringTableTargetLength)
+            {
+                var (index, size) = BinSerialize.ReadProtoByteArraySize(ref uncompressedSpan);
+                if (tagFilters != null && tagFilters.StringLengths.TryGetValue(size, out var utf8StringList))
+                {
+                    foreach (var utf8String in utf8StringList)
+                    {
+                        if (uncompressedSpan.Slice(0, size).SequenceEqual(utf8String.Span))
+                        {
+                            utf8ToIdMappings.Add(utf8String, stringSpans.Count);
+                        }
+                    }
+                }
+                stringSpans.Add(new Memory<byte>(uncompressedBuffer, (int)uncompressedSize - uncompressedSpan.Length, size));
+                uncompressedSpan = uncompressedSpan.Slice(size);
+            }
+
+            var stringIdFilters = new Dictionary<int, HashSet<int>?>();
+            if (tagFilters != null)
+            {
+                foreach (var item in tagFilters.Utf8TagsFilter)
+                {
+                    if (item.TagValues.Count == 0)
+                    {
+                        if (utf8ToIdMappings.TryGetValue(item.TagKey, out var val))
+                            stringIdFilters.Add(val, null);
+                    }
+                    else
+                    {
+                        var hashset = new HashSet<int>();
+                        foreach (var tagValue in item.TagValues)
+                        {
+                            if (utf8ToIdMappings.TryGetValue(tagValue, out var val))
+                                hashset.Add(val);
+                        }
+                        if (utf8ToIdMappings.TryGetValue(item.TagKey, out var val2))
+                            stringIdFilters.Add(val2, hashset);
+                    }
+                }
+            }
+
+            if (tagFilters?.Utf8TagsFilter.Count > 0 && stringIdFilters.Count == 0)
+            {
+                ArrayPool<byte>.Shared.Return(uncompressedBuffer);
+                return;
+            }
+
 
             var nodes = new List<long>();
             var lats = new List<long>();
             var lons = new List<long>();
+            var keyVals = new Dictionary<int, List<(int key, int val)>>();
             int granularity = 100;
             int date_granularity = 100;
             long lat_offset = 0;
@@ -45,11 +132,13 @@ namespace OsmNightWatch.PbfParsing
                 switch (blockIndex)
                 {
                     case 2:
+                        var filteredNodesIndexes = new HashSet<int>();
                         var primitivegroupSize = BinSerialize.ReadPackedInt(ref uncompressedSpan);
                         var expectedLengthAtEndOfPrimitiveGroup = uncompressedSpan.Length - primitivegroupSize;
                         nodes.Clear();
                         lats.Clear();
                         lons.Clear();
+                        keyVals.Clear();
                         while (uncompressedSpan.Length > expectedLengthAtEndOfPrimitiveGroup)
                         {
                             var (index, primitiveSize) = BinSerialize.ReadProtoByteArraySize(ref uncompressedSpan);
@@ -99,19 +188,60 @@ namespace OsmNightWatch.PbfParsing
                                         break;
                                     case 10://keys_vals 
                                         var sizeOfKeysVals = BinSerialize.ReadPackedInt(ref uncompressedSpan);
-                                        uncompressedSpan = uncompressedSpan.Slice(sizeOfKeysVals);
+                                        var expectedLengthAtEndOfKeysVals = uncompressedSpan.Length - sizeOfKeysVals;
+                                        int nodeIndex = 0;
+                                        List<(int key, int val)>? current = null;
+                                        while (uncompressedSpan.Length > expectedLengthAtEndOfKeysVals)
+                                        {
+                                            var key = BinSerialize.ReadPackedUnsignedInteger(ref uncompressedSpan);
+                                            if (key == 0)
+                                            {
+                                                current = null;
+                                                nodeIndex++;
+                                                continue;
+                                            }
+                                            var val = BinSerialize.ReadPackedUnsignedInteger(ref uncompressedSpan);
+                                            if (current == null)
+                                            {
+                                                keyVals[nodeIndex] = current = new List<(int key, int val)>();
+                                            }
+                                            current.Add(((int)key, (int)val));
+                                            if (stringIdFilters.TryGetValue((int)key, out var hashset))
+                                            {
+                                                if (hashset == null)
+                                                {
+                                                    filteredNodesIndexes.Add(nodeIndex);
+                                                }
+                                                else
+                                                {
+                                                    if (hashset.Contains((int)val))
+                                                    {
+                                                        filteredNodesIndexes.Add(nodeIndex);
+                                                    }
+                                                }
+                                            }
+                                        }
                                         break;
                                 }
                             }
                             for (int i = 0; i < nodes.Count; i++)
                             {
-                                if (nodesToLoad?.Contains(nodes[i]) ?? true)
+                                if (nodesToLoad?.Contains(nodes[i]) ?? true && filteredNodesIndexes.Contains(i))
                                 {
-                                    nodeBags.Add(new Node(nodes[i], DecodeLatLon(lats[i], lat_offset, granularity), DecodeLatLon(lons[i], lon_offset, granularity)));
+                                    TagsCollection? tags = null;
+                                    if (keyVals.TryGetValue(i, out var val))
+                                    {
+                                        tags = new OsmSharp.Tags.TagsCollection(keyVals[i].Count);
+                                        for (int j = 0; j < keyVals[i].Count; j++)
+                                        {
+                                            tags.Add(new OsmSharp.Tags.Tag(System.Text.Encoding.UTF8.GetString(stringSpans[keyVals[i][j].key].Span), System.Text.Encoding.UTF8.GetString(stringSpans[keyVals[i][j].val].Span)));
+                                        }
+                                    }
+                                    action(new Node(nodes[i], DecodeLatLon(lats[i], lat_offset, granularity), DecodeLatLon(lons[i], lon_offset, granularity), tags));
                                     nodesToLoad?.Remove(nodes[i]);
                                     if (nodesToLoad != null && nodesToLoad.Count == 0)
                                     {
-                                        ArrayPool<byte>.Shared.Return(uncompressbuffer);
+                                        ArrayPool<byte>.Shared.Return(uncompressedBuffer);
                                         return;
                                     }
                                 }
@@ -132,12 +262,12 @@ namespace OsmNightWatch.PbfParsing
                         break;
                 }
             }
-            throw new InvalidOperationException("if (waysToLoad.Count == 0) should get us out of here before we get here...");
+            ArrayPool<byte>.Shared.Return(uncompressedBuffer);
         }
 
         class NodeCollector : IPBFOsmPrimitiveConsumer
         {
-            public List<OsmSharp.Node> Nodes { get; } = new ();
+            public List<OsmSharp.Node> Nodes { get; } = new();
 
             public void ProcessNode(PrimitiveBlock block, OsmSharp.IO.PBF.Node node)
             {
