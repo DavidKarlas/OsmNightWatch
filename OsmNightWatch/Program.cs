@@ -69,23 +69,32 @@ else
 {
     database.AbortTransaction();
 }
-IReplicationDiffEnumerator enumerator = new CatchupReplicationDiffEnumerator((DateTime)currentTimeStamp);
 IssuesData? oldIssuesData = IssuesUploader.Download();
 
 
 while (true)
 {
-    var replicationState = GetNextState();
-
 retry:
     try
     {
-        Log($"Downloading changeset '{replicationState.EndTimestamp}'.");
-        var changeset = DownloadChangeset(replicationState.Config, replicationState.SequenceNumber);
+        var enumerator = new CatchupReplicationDiffEnumerator((DateTime)currentTimeStamp);
+
+        var mergedChangeset = new MergedChangeset();
+        ReplicationState? replicationState = null;
+        while (enumerator.MoveNext().Result == true)
+        {
+            replicationState = enumerator.State;
+            Log($"Downloading changeset '{replicationState.EndTimestamp}'.");
+            mergedChangeset.Add(DownloadChangeset(replicationState.Config, replicationState.SequenceNumber));
+        }
+        if (replicationState == null)
+        {
+            await Task.Delay(60 * 1000);
+            continue;
+        }
+        mergedChangeset.Build();
 
         database.BeginTransaction();
-
-        var mergedChangeset = new MergedChangeset(changeset);
         Log($"Applying changeset to database...");
         dbWithChanges.ApplyChangeset(mergedChangeset);
 
@@ -96,6 +105,7 @@ retry:
         newIssuesData.SetTimestampsAndLastKnownGood(oldIssuesData);
         oldIssuesData = newIssuesData;
         UploadIssues(replicationState, newIssuesData);
+        currentTimeStamp = replicationState.EndTimestamp;
         database.CommitTransaction();
     }
     catch (Exception ex)
@@ -109,39 +119,6 @@ retry:
 static void Log(string message)
 {
     Console.WriteLine(DateTime.Now.ToString("s") + ": " + message);
-}
-
-ReplicationState GetNextState()
-{
-    while (true)
-    {
-        try
-        {
-            if (enumerator.MoveNext().Result == false)
-            {
-                Log($"Failed to iterate enumerator... Sleeping 1 minute.");
-                Task.Delay(TimeSpan.FromMinutes(1)).Wait();
-                if (enumerator.State.Config.Period == ReplicationConfig.Minutely.Period && enumerator is CatchupReplicationDiffEnumerator)
-                {
-                    enumerator = ReplicationConfig.Minutely.GetDiffEnumerator(enumerator.State.SequenceNumber).Result;
-                }
-                continue;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log(ex.ToString());
-            continue;
-        }
-        var replicationState = enumerator.State;
-        if (replicationState is null)
-        {
-            Log($"Enumerator returned null state, sleeping 1 minute.");
-            Task.Delay(TimeSpan.FromMinutes(1)).Wait();
-            continue;
-        }
-        return replicationState;
-    }
 }
 
 string DiffUrl(ReplicationConfig config, string filePath)
@@ -199,7 +176,8 @@ static string ReplicationFilePath(long sequenceNumber)
 static void UploadIssues(ReplicationState replicationState, IssuesData newIssuesData)
 {
     // Only do uploading on changesets that are newer than 5 minutes
-    if (replicationState.EndTimestamp.AddMinutes(5) > DateTime.UtcNow)
+    if (replicationState.EndTimestamp.AddMinutes(5) > DateTime.UtcNow ||
+        (IssuesUploader.Download() is IssuesData existingData && existingData.DateTime < newIssuesData.DateTime))
     {
         try
         {
@@ -215,7 +193,8 @@ static void UploadIssues(ReplicationState replicationState, IssuesData newIssues
 
 static IssuesData Analyze(IOsmAnalyzer[] analyzers, MergedChangeset mergedChangeset, OsmDatabaseWithReplicationData dbWithChanges, ReplicationState replicationState)
 {
-    var newIssuesData = new IssuesData() {
+    var newIssuesData = new IssuesData()
+    {
         DateTime = replicationState.EndTimestamp,
         MinutelySequenceNumber = (int)replicationState.SequenceNumber
     };

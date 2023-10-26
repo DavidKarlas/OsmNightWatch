@@ -69,7 +69,7 @@ namespace OsmNightWatch
         {
             if (transaction is not LightningTransaction tx)
             {
-                throw new InvalidOperationException("Transaction not started!");
+                return;
             }
             tx.Dispose();
             foreach (var db in databases.Values)
