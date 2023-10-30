@@ -1,0 +1,101 @@
+﻿@page "/RateLimit"
+
+<PageTitle>Rate Limiting Changesets</PageTitle>
+
+@using OsmNightWatch.Web.Data
+@using OsmNightWatch.Lib
+@inject IssuesDataService IssuesDataService
+
+<h1>Rate Limiting Changesets</h1>
+Idea is to show accounts and changesets that would be rate limited(changesets listed here would be rejected on upload by osm.org API) if following logic was implemented.
+<br />
+All limits are per 1 hour per account:
+<ul>
+    <li>Created Nodes = 3000</li>
+    <li>Modified Nodes = 500</li>
+    <li>Deleted Nodes = 500</li>
+    <li>Created Ways = 700</li>
+    <li>Modified Ways = 250</li>
+    <li>Deleted Ways = 200</li>
+    <li>Created Relationships = 100</li>
+    <li>Modified Relationships = 50</li>
+    <li>Deleted Relationships = 50</li>
+</ul>
+<ul>
+    <li>For accounts older than 7 days all numbers are multiplied with 1.5, for accounts older than 30 days with 2.0, if older than one year numbers are multiplied with 4.0.</li>
+    <li>For accounts with more than 50 changesets all numbers are multiplied with 1.3, for accounts with more than 100 changesets with 1.5, for accounts with more than 500 changesets with 2.0.</li>
+    <li>Number of changesets is limited to 100 per 1h.</li>
+    <li><b>For accounts with more than 1000 changesets and older than 90 days all limits are lifted.</b></li>
+</ul>
+Whole logic is made to be fast and easily integrated into <a href="https://github.com/zerebubuth/openstreetmap-cgimap">cgimap</a>, hence only depending on changeset count of account and account age.
+<br />
+Out of ~6205 users that made changesets on 26th of October, only 24 would be rate limited:.
+<ul>
+    <li>~3 were vandals, one of them made 1835 changesets, this logic would stop it at 100 changesets.</li>
+    <li>
+        ~9 were HOT and corporations contributors, who start contributing a lot as soon as accounts are created, maybe vouching mechanism could be implemented for them.
+    </li>
+    <li>
+        ~10 were also power users who just joined community and started contributing a lot, maybe secondary accounts?
+    </li>
+    <li>
+        ~2 imports accounts. Maybe vouching mechanism could be implemented for them, so main account can vouch for import account.
+    </li>
+</ul>
+Regarding vouching system... Anyone with <a href="https://supporting.openstreetmap.org/active-contributor-membership/">Active Account</a> could vouch for other account, and that account would be excluded from rate limiting.
+<br />
+Of course single account could only vouch for limited number of accounts per day.
+<br />
+New power users that hit rate limit could be directed to reach out to local community to get vouched or wait 1 hour. DWG could also have a list of accounts that were rate limited and DWG would have ability to ban them or vouch for them based on work done so far...
+Once rate limiting is lifted(via vouching) for account, they would be notified via OSM messaging system, so they can continue contributing.
+<br />
+Code processing minutely replication changesets and producing this data is available <a href="https://github.com/DavidKarlas/ChangesetLimiter">on Github.</a>
+@if (issuesData == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Account</th>
+                <th>Timestamp</th>
+                <th>OSM link</th>
+                <th>Reason</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var account in issuesData.OrderByDescending(ig => ig.Changesets.Max(c => c.Timestamp)))
+            {
+                <tr>
+                    <td>
+                        <a class="btn btn-success" href="https://www.openstreetmap.org/user/@account.Username" target="_blank">@account.Username</a>
+                        <a class="btn btn-primary" href="https://hdyc.neis-one.org/?@account.Username" target="_blank">neis-one</a>
+                    </td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
+                </tr>
+                foreach (var changeset in account.Changesets.OrderByDescending(c => c.Timestamp))
+                {
+                    <tr>
+                        <td></td>
+                        <td>@changeset.Timestamp!.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                        <td><a href="https://www.openstreetmap.org/changeset/@changeset.Id" target="_blank">Changeset @changeset.Id</a></td>
+                        <td style="white-space: pre-line">@string.Join("\n",changeset.Reasons)</td>
+                    </tr>
+                }
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private RateLimitedAccount[]? issuesData;
+
+    protected override async Task OnInitializedAsync()
+    {
+        issuesData = await IssuesDataService.GetSuspiciousDataAsync();
+    }
+}

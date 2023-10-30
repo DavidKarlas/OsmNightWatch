@@ -20,5 +20,34 @@ namespace OsmNightWatch.Web.Data
             lastCache.Restart();
             return cache;
         }
+
+        Task<RateLimitedAccount[]>? cacheSuspicious = null;
+        Stopwatch lastSuspiciousCache = Stopwatch.StartNew();
+
+        public Task<RateLimitedAccount[]> GetSuspiciousDataAsync()
+        {
+            if (cacheSuspicious != null && lastSuspiciousCache.Elapsed.TotalMinutes < 1)
+            {
+                return cacheSuspicious;
+            }
+            cacheSuspicious = client.GetFromJsonAsync<RateLimitedAccount[]>("https://davidupload.blob.core.windows.net/data/RateLimit.json")!;
+            lastCache.Restart();
+            return cacheSuspicious;
+        }
     }
+
+    public class RateLimitedAccount
+    {
+        public long UserId { get; set; }
+        public string Username { get; set; }
+        public List<RateLimitedChangeset> Changesets { get; set; }
+
+        public class RateLimitedChangeset
+        {
+            public long Id { get; set; }
+            public DateTime Timestamp { get; set; }
+            public List<string> Reasons { get; set; }
+        }
+    }
+
 }
