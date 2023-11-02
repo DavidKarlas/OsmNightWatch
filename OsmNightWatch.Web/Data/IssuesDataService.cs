@@ -40,6 +40,11 @@ namespace OsmNightWatch.Web.Data
     {
         public long UserId { get; set; }
         public string Username { get; set; }
+        public bool Blocked { get; set; }
+        public bool Deleted { get; set; }
+        public DateTime CreatedDate { get; set; }
+        public int TotalChangesets { get; set; }
+        public DateTime FirstChangesetDate { get; set; }
         public List<RateLimitedChangeset> Changesets { get; set; }
 
         public class RateLimitedChangeset
