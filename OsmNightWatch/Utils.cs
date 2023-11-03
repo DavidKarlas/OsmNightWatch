@@ -1,4 +1,5 @@
-﻿using OsmNightWatch.PbfParsing;
+﻿using OsmNightWatch.Analyzers.ImportantFeatures;
+using OsmNightWatch.PbfParsing;
 using System.Collections.Concurrent;
 using System.Data.SQLite;
 
@@ -6,6 +7,35 @@ namespace OsmNightWatch
 {
     static class Utils
     {
+        public static string GetFriendlyName(this ImportantFeatureJson featureJson)
+        {
+            if (featureJson.tags.TryGetValue("name:en", out var nameEn))
+            {
+                if (nameEn is string str)
+                    return str;
+                else
+                    return string.Join(", ", (string[])nameEn);
+            }
+            if (featureJson.tags.TryGetValue("name", out var name))
+            {
+                if (name is string str)
+                    return str;
+                else
+                    return string.Join(", ", (string[])name);
+            }
+            return "Unnamed";
+        }
+
+        public static string ToChar(this OsmGeoType type)
+        {
+            return type switch {
+                OsmGeoType.Node => "N",
+                OsmGeoType.Way => "W",
+                OsmGeoType.Relation => "R",
+                _ => throw new NotImplementedException(),
+            };
+        }
+
         public static DateTime GetLatestTimestampFromPbf(PbfIndex pbfIndex)
         {
             var offset = pbfIndex.GetLastNodeOffset();

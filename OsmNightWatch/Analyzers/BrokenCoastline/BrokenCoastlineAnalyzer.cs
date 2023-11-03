@@ -51,8 +51,8 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             {
                 new ElementFilter(OsmGeoType.Way,
                     new[] { new TagFilter("natural", "coastline") },
-                    false,
-                    true)
+                    needsWays: false,
+                    needsNodes:true)
             }
         };
 
@@ -308,7 +308,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
         private void ExpandListOfAllCoastlinesWithCoastlinesIntersectingBbox(HashSet<uint> waysToCheck)
         {
             using (var comm = sqlConnection.CreateCommand(@$"SELECT searchedCoastline.id FROM Coastlines searchedCoastline, Coastlines modifiedCoastline WHERE 
-                                                           modifiedCoastline.id IN ({string.Join("","", waysToCheck)}) AND
+                                                           modifiedCoastline.id IN ({string.Join("", "", waysToCheck)}) AND
                                                            searchedCoastline.rowid IN (SELECT ROWID FROM SpatialIndex WHERE f_table_name='Coastlines' AND search_frame=modifiedCoastline.geom);"))
             {
                 using var reader = comm.ExecuteReader();

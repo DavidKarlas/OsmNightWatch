@@ -96,8 +96,8 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
                     new TagFilter("boundary", "administrative"),
                     new TagFilter("type", "boundary"),
                     new TagFilter("admin_level", "2", "3","4","5","6","7","8") },
-                    true,
-                    true)
+                    needsWays: true,
+                    needsNodes: true)
             }
     };
 

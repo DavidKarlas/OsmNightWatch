@@ -11,16 +11,22 @@ namespace OsmNightWatch
     public class ElementFilter
     {
         public OsmGeoType GeoType { get; }
-        
-        public List<TagFilter> Tags { get; }
+
+        public List<TagFilter>? Tags { get; }
+
+        public HashSet<long>? Ids { get; }
 
         public bool NeedsWays { get; }
-        
+
         public bool NeedsNodes { get; }
 
-        public ElementFilter(OsmGeoType geoType, IEnumerable<TagFilter> tags, bool needsWays = false, bool needsNodes = false) {
+        public ElementFilter(OsmGeoType geoType, IEnumerable<TagFilter>? tags = null, IEnumerable<long>? ids = null, bool needsWays = false, bool needsNodes = false)
+        {
+            if (ids == null && tags == null)
+                throw new ArgumentException("At least one of 'ids' or 'tags' parameters must not be null.");
             GeoType = geoType;
-            Tags = tags.ToList();
+            Tags = tags?.ToList();
+            Ids = ids?.ToHashSet();
             NeedsWays = needsWays;
             NeedsNodes = needsNodes;
         }
@@ -31,10 +37,17 @@ namespace OsmNightWatch
                 throw new InvalidOperationException();
             if (element.Tags == null)
                 return false;
-            foreach (var tagFilter in Tags)
+            if (Ids != null && Ids.Contains(element.Id))
             {
-                if (!tagFilter.Matches(element.Tags))
-                    return false;
+                return true;
+            }
+            if (Tags != null)
+            {
+                foreach (var tagFilter in Tags)
+                {
+                    if (!tagFilter.Matches(element.Tags))
+                        return false;
+                }
             }
             return true;
         }

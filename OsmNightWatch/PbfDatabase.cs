@@ -20,28 +20,64 @@ internal class PbfDatabase : IOsmValidateSource
 
     public IEnumerable<OsmGeo> Filter(FilterSettings filterSettings)
     {
-        foreach (var group in filterSettings.Filters.GroupBy(f => f.GeoType))
+        foreach (var group in filterSettings.Filters.Where(f => f.Tags != null).GroupBy(f => f.GeoType))
         {
             switch (group.Key)
             {
                 case OsmGeoType.Node:
                     foreach (var node in NodesParser.Parse(group, index))
                     {
-                        //_ways[(long)way.Id!] = way;
                         yield return node;
                     }
                     break;
                 case OsmGeoType.Way:
                     foreach (var way in WaysParser.Parse(group, index))
                     {
-                        //_ways[(long)way.Id!] = way;
                         yield return way;
                     }
                     break;
                 case OsmGeoType.Relation:
                     foreach (var relation in RelationsParser.Parse(group, index))
                     {
-                        //_relations[(long)relation.Id!] = relation;
+                        yield return relation;
+                    }
+                    break;
+            }
+        }
+        foreach (var group in filterSettings.Filters.Where(f => f.Ids != null).GroupBy(f => f.GeoType))
+        {
+            switch (group.Key)
+            {
+                case OsmGeoType.Node:
+                    var nodeIds = new HashSet<long>();
+                    foreach (var filter in group)
+                    {
+                        nodeIds.UnionWith(filter.Ids!);
+                    }
+                    foreach (var node in NodesParser.LoadNodes(nodeIds, index))
+                    {
+                        yield return node;
+                    }
+                    break;
+                case OsmGeoType.Way:
+                    var wayIds = new HashSet<long>();
+                    foreach (var filter in group)
+                    {
+                        wayIds.UnionWith(filter.Ids!);
+                    }
+                    foreach (var way in WaysParser.LoadWays(wayIds, index))
+                    {
+                        yield return way;
+                    }
+                    break;
+                case OsmGeoType.Relation:
+                    var relationIds = new HashSet<long>();
+                    foreach (var filter in group)
+                    {
+                        relationIds.UnionWith(filter.Ids!);
+                    }
+                    foreach (var relation in RelationsParser.LoadRelations(relationIds, index))
+                    {
                         yield return relation;
                     }
                     break;

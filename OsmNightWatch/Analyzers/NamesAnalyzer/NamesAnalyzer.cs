@@ -22,7 +22,7 @@ internal class NamesAnalyzer
             if (osmGeo.Tags["name"] == "*")
             {
                 return new IssueData() {
-                    OsmType = osmGeo.Type.ToString(),
+                    OsmType = osmGeo.Type.ToChar(),
                     OsmId = osmGeo.Id!,
                     Details = osmGeo.Tags["name"],
                     IssueType = "Invalid characters",

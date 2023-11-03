@@ -22,7 +22,7 @@ if (path == null || !PbfIndexBuilder.DoesIndexExist(path))
     using var memoryStream = new MemoryStream();
     await torrentStream.CopyToAsync(memoryStream);
     memoryStream.Position = 0;
-    await engine.AddAsync(MonoTorrent.Torrent.Load(memoryStream), Directory.GetCurrentDirectory());
+    await engine.AddAsync(MonoTorrent.Torrent.Load(memoryStream), dataStoragePath);
     await engine.StartAllAsync();
     while (engine.IsRunning)
     {
@@ -42,7 +42,8 @@ var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
 var analyzers = new IOsmAnalyzer[] {
     new AdminCountPerCountryAnalyzer(database, dataStoragePath),
-    new BrokenCoastlineAnalyzer(database, dataStoragePath)
+    new BrokenCoastlineAnalyzer(database, dataStoragePath),
+    new OsmNightWatch.Analyzers.ImportantFeatures.ImportantFeaturesAnalyzer(dataStoragePath)
 };
 
 var dbWithChanges = new OsmDatabaseWithReplicationData(pbfDb, database);

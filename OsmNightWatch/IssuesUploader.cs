@@ -27,6 +27,8 @@ internal class IssuesUploader
 
         BlobContainerClient containerClient = new(blobStorageConnectionString, blobStorageContainerName);
         BlobClient blobClient = containerClient.GetBlobClient(fileName);
+        if(blobClient.Exists() == false)
+            return null;
         var response = blobClient.DownloadContent();
 
         return JsonSerializer.Deserialize<IssuesData>(response.Value.Content.ToArray());

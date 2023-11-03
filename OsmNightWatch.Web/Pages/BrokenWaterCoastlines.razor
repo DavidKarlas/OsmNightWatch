@@ -28,7 +28,7 @@ else
             @foreach (var issuesByDay in issuesData.AllIssues.Where(issue => issue.IssueType == "BrokenCoastLine").GroupBy(i => i.FirstTimeSeen.Value.Date).OrderByDescending(ig => ig.Key))
             {
                 <tr>
-                    <td>@issuesByDay.Key.ToString("yyyy-MM-dd  -  dddd")</td>
+                    <td><b>@issuesByDay.Key.ToString("yyyy-MM-dd  -  dddd")</b></td>
                     <td></td>
                     <td></td>
                 </tr>

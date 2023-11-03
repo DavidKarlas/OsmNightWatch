@@ -12,7 +12,8 @@ namespace OsmNightWatch.Web
             //("OpenAdminPolygon10", "Open  admins level 10.","/OpenAdminPolygons/10" ),    
             ("BrokenCoastLine", "Broken coastlines","/BrokenWaterCoastlines" ),
             ("AdminsState", "Admins State","/AdminsState" ),
-            ("MissingWays","Admins without ways", "/AdminsWithoutWays" )
+            ("MissingWays","Admins without ways", "/AdminsWithoutWays" ),
+            ("ImportantFeatures","Important Features", "/ImportantFeatures" )
             
         };
 
