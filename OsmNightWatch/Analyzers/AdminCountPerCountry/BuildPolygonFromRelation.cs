@@ -52,6 +52,10 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
                         }
                         break;
                     case "":
+                        if (member.Type == OsmGeoType.Way)
+                        {
+                            atLeastOneWay = true;
+                        }
                         atLeastOneMemberWithoutRole = true;
                         break;
                 }
