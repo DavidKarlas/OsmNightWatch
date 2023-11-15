@@ -47,9 +47,8 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         }
     }
 
-    public void EmptyUpsertAdmins(object param)
+    public void ProcessUpsertAdminsCollection(BlockingCollection<(long id, string friendlyName, int adminLevel, byte[]? polygon, string? reason)> adminsToUpsert, TaskCompletionSource<bool> adminsToUpsertAbortOrCommitTask)
     {
-        var (adminsToUpsert, adminsToUpsertAbortOrCommitTask) = ((BlockingCollection<(long id, string friendlyName, int adminLevel, byte[]? polygon, string? reason)>, TaskCompletionSource<bool>))param;
         var transaction = sqlConnection.BeginTransaction();
         (long id, string friendlyName, int adminLevel, byte[]? polygon, string? reason) blob;
         while (!adminsToUpsert.IsCompleted)
@@ -457,7 +456,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         var adminsToUpsert = AdminsToUpsert = new(128);
         var adminsToUpsertAbortOrCommitTask = AdminsToUpsertAbortOrCommitTask = new TaskCompletionSource<bool>();
         Task.Run(() => {
-            EmptyUpsertAdmins((adminsToUpsert, adminsToUpsertAbortOrCommitTask));
+            ProcessUpsertAdminsCollection(adminsToUpsert, adminsToUpsertAbortOrCommitTask);
         });
     }
 

@@ -41,9 +41,10 @@ database.BeginTransaction();
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
 var analyzers = new IOsmAnalyzer[] {
-    new AdminCountPerCountryAnalyzer(database, dataStoragePath),
-    new BrokenCoastlineAnalyzer(database, dataStoragePath),
-    new OsmNightWatch.Analyzers.ImportantFeatures.ImportantFeaturesAnalyzer(dataStoragePath)
+    //new AdminCountPerCountryAnalyzer(database, dataStoragePath),
+    //new BrokenCoastlineAnalyzer(database, dataStoragePath),
+    //new OsmNightWatch.Analyzers.ImportantFeatures.ImportantFeaturesAnalyzer(dataStoragePath),
+    new OsmNightWatch.Analyzers.Waterbodies.WaterbodiesAnalyzer(database, dataStoragePath)
 };
 
 var dbWithChanges = new OsmDatabaseWithReplicationData(pbfDb, database);

@@ -1,9 +1,10 @@
 ﻿using NetTopologySuite.Geometries;
+using NetTopologySuite.Geometries.Prepared;
 using NetTopologySuite.Operation.Polygonize;
 using NetTopologySuite.Operation.Union;
 using OsmNightWatch.PbfParsing;
 
-namespace OsmNightWatch.Analyzers.AdminCountPerCountry
+namespace OsmNightWatch
 {
     public static class BuildPolygonFromRelation
     {
@@ -131,10 +132,10 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
                     {
                         return (MultiPolygon.Empty, outerWays, "Inner ways have unused sections.");
                     }
-
+                    var preparedPolygons = outerPolygons.Select(op => new PreparedPolygon(op)).ToArray();
                     for (int i = 0; i < outerPolygons.Length; i++)
                     {
-                        var poly = outerPolygons[i];
+                        var poly = preparedPolygons[i];
                         var inners = new List<LinearRing>();
                         foreach (var innerPolygon in innerPolygonizer.GetPolygons().OfType<Polygon>())
                         {
@@ -143,7 +144,7 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
                                 inners.Add(innerPolygon.Shell);
                             }
                         }
-                        outerPolygons[i] = new Polygon(poly.Shell, inners.ToArray());
+                        outerPolygons[i] = new Polygon(outerPolygons[i].Shell, inners.ToArray());
                     }
                 }
                 outerWays.AddRange(innerWays);

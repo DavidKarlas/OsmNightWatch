@@ -13,7 +13,7 @@ internal class IssuesUploader
         var memStream = new MemoryStream(bytes);
 
         string blobStorageContainerName = "data";
-        string fileName = "issues.json";
+        string fileName = "issuesW.json";
 
         BlobContainerClient containerClient = new(blobStorageConnectionString, blobStorageContainerName);
         BlobClient blobClient = containerClient.GetBlobClient(fileName);
@@ -23,7 +23,7 @@ internal class IssuesUploader
     internal static IssuesData? Download()
     {
         string blobStorageContainerName = "data";
-        string fileName = "issues.json";
+        string fileName = "issuesW.json";
 
         BlobContainerClient containerClient = new(blobStorageConnectionString, blobStorageContainerName);
         BlobClient blobClient = containerClient.GetBlobClient(fileName);
