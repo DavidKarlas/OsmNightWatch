@@ -1,4 +1,6 @@
-﻿using NetTopologySuite.Geometries;
+﻿using NetTopologySuite;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.Geometries.Implementation;
 using NetTopologySuite.Operation.Polygonize;
 using NetTopologySuite.Operation.Union;
 using OsmNightWatch.PbfParsing;
@@ -7,6 +9,8 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
 {
     public static class BuildPolygonFromRelation
     {
+        private static NtsGeometryServices geometryServices = new(CoordinateArraySequenceFactory.Instance, new PrecisionModel(10_000_000), 4326, GeometryOverlay.NG, new CoordinateEqualityComparer());
+        public static GeometryFactory GeometryFactory = new(new PrecisionModel(10_000_000), 4326, CoordinateArraySequenceFactory.Instance, geometryServices);
         public static (Geometry Polygon, List<Way> Ways, string? reason) BuildPolygon(Relation relation, IOsmGeoSource newOsmSource)
         {
             var result = InternalBuildPolygon(relation, newOsmSource);
@@ -77,7 +81,7 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
             }
             try
             {
-                var outerPolygonizer = new PolygonizeGraph(GeometryFactory.Default);
+                var outerPolygonizer = new PolygonizeGraph(GeometryFactory);
                 foreach (var outerWay in outerWays)
                 {
                     var array = new Coordinate[outerWay.Nodes.Length];
@@ -86,7 +90,7 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
                         var node = newOsmSource.GetNode(outerWay.Nodes[i]);
                         array[i] = node.ToCoordinate();
                     }
-                    outerPolygonizer.AddEdge(new LineString(array.ToArray()));
+                    outerPolygonizer.AddEdge(new LineString(new CoordinateArraySequence(array.ToArray()), GeometryFactory));
                 }
 
                 if (outerPolygonizer.DeleteDangles().Any())
@@ -119,7 +123,7 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
                     Polygonizer innerPolygonizer = new Polygonizer();
                     foreach (var innerWay in innerWays)
                     {
-                        innerPolygonizer.Add(new LineString(innerWay.Nodes.Select(x => newOsmSource.GetNode(x).ToCoordinate()).ToArray()));
+                        innerPolygonizer.Add(new LineString(new CoordinateArraySequence(innerWay.Nodes.Select(x => newOsmSource.GetNode(x).ToCoordinate()).ToArray()), GeometryFactory));
                     }
 
                     if (innerPolygonizer.GetInvalidRingLines().Count > 0)
@@ -143,11 +147,11 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
                                 inners.Add(innerPolygon.Shell);
                             }
                         }
-                        outerPolygons[i] = new Polygon(poly.Shell, inners.ToArray());
+                        outerPolygons[i] = new Polygon(poly.Shell, inners.ToArray(), GeometryFactory);
                     }
                 }
                 outerWays.AddRange(innerWays);
-                return (new MultiPolygon(outerPolygons), outerWays, null);
+                return (new MultiPolygon(outerPolygons, GeometryFactory), outerWays, null);
             }
             catch (Exception ex)
             {
