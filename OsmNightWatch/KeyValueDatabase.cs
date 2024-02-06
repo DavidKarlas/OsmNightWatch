@@ -121,7 +121,7 @@ namespace OsmNightWatch
             }
             var db = OpenDb(tx, "Nodes");
             Span<byte> keyBuffer = stackalloc byte[8];
-            Span<byte> originalBuffer = stackalloc byte[16 * 1024];
+            Span<byte> originalBuffer = stackalloc byte[32 * 1024];
             foreach (var element in (initial ? (IEnumerable<KeyValuePair<long, Node?>>)changesetNodes.OrderBy(e => e.Key) : changesetNodes))
             {
                 BinaryPrimitives.WriteInt64BigEndian(keyBuffer, element.Key);
