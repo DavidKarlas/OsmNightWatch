@@ -29,14 +29,14 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                 if (graph.FirstNodes.ContainsKey(first))
                 {
                     var ways = new List<(long wayId, long firstNode, long lastNode)>() { (wayId, first, last), graph.FirstNodes[first] };
-                    graph.DuplicateFirstNodes.Add(first, ways);
+                    graph.DuplicateLastNodes[first] = ways;
                     foundDuplicateFirst = true;
                 }
 
                 if (graph.LastNodes.ContainsKey(last))
                 {
                     var ways = new List<(long wayId, long firstNode, long lastNode)>() { (wayId, first, last), graph.LastNodes[last] };
-                    graph.DuplicateLastNodes.Add(last, ways);
+                    graph.DuplicateLastNodes[last] = ways;
                     foundDuplicateLast = true;
                 }
 
