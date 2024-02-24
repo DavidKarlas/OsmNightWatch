@@ -225,5 +225,15 @@ namespace OsmNightWatch.Analyzers.ImportantFeatures
             }
             return Issues.Values.SelectMany(c => c.Values).SelectMany(c => c);
         }
+
+        public void ProcessElement(OsmGeo element)
+        {
+            throw new NotImplementedException();
+        }
+
+        public IEnumerable<IssueData> ProcessPbf(IOsmGeoBatchSource newOsmSource)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

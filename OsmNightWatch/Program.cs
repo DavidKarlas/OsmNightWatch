@@ -3,6 +3,7 @@ using OsmNightWatch;
 using OsmNightWatch.Analyzers;
 using OsmNightWatch.Analyzers.AdminCountPerCountry;
 using OsmNightWatch.Analyzers.BrokenCoastline;
+using OsmNightWatch.Analyzers.HighwayNetwork;
 using OsmNightWatch.Lib;
 using OsmNightWatch.PbfParsing;
 using OsmSharp.Changesets;
@@ -41,9 +42,10 @@ database.BeginTransaction();
 var index = PbfIndexBuilder.BuildIndex(path);
 var pbfDb = new PbfDatabase(index);
 var analyzers = new IOsmAnalyzer[] {
-    new AdminCountPerCountryAnalyzer(database, dataStoragePath),
-    new BrokenCoastlineAnalyzer(database, dataStoragePath),
-    new OsmNightWatch.Analyzers.ImportantFeatures.ImportantFeaturesAnalyzer(dataStoragePath)
+    new HighwayNetworkAnalyzer(database, dataStoragePath),
+    //new AdminCountPerCountryAnalyzer(database, dataStoragePath),
+    //new BrokenCoastlineAnalyzer(database, dataStoragePath),
+    //new OsmNightWatch.Analyzers.ImportantFeatures.ImportantFeaturesAnalyzer(dataStoragePath)
 };
 
 var dbWithChanges = new OsmDatabaseWithReplicationData(pbfDb, database);
@@ -52,9 +54,9 @@ if (currentTimeStamp == null)
 {
     foreach (var analyzer in analyzers)
     {
-        var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings).ToArray();
+        dbWithChanges.Validate(analyzer.ProcessElement, analyzer.FilterSettings);
         Log($"Starting {analyzer.AnalyzerName}...");
-        var issues = analyzer.ProcessPbf(relevantThings, dbWithChanges);
+        var issues = analyzer.ProcessPbf(dbWithChanges);
         Log($"Found {issues.Count()} issues.");
     }
     Log("Storing relevant elements into LMDB.");

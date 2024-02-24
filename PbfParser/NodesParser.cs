@@ -62,6 +62,15 @@ namespace OsmNightWatch.PbfParsing
                 });
         }
 
+        public static void Process(Action<Node> action, HashSet<long> ids, PbfIndex index)
+        {
+            var fileOffsets = index.CalculateFileOffsets(ids, OsmGeoType.Node);
+            ParallelParse(index.PbfPath, fileOffsets,
+                (HashSet<long>? relevantIds, byte[] readBuffer, object? state) => {
+                    ParseNodes(relevantIds, action, null, readBuffer);
+                });
+        }
+
         private static void ParseNodes(HashSet<long>? nodesToLoad, Action<Node> action, IndexedTagFilters? tagFilters, byte[] readBuffer)
         {
             ReadOnlySpan<byte> dataSpan = readBuffer;

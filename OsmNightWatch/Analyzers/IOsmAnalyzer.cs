@@ -9,7 +9,9 @@ namespace OsmNightWatch.Analyzers
 
         FilterSettings FilterSettings { get; }
 
-        IEnumerable<IssueData> ProcessPbf(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource);
+        void ProcessElement(OsmGeo element);
+
+        IEnumerable<IssueData> ProcessPbf(IOsmGeoBatchSource newOsmSource);
 
         IEnumerable<IssueData> ProcessChangeset(MergedChangeset changeSet, IOsmGeoBatchSource newOsmSource);
     }

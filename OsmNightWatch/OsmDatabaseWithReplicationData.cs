@@ -1,8 +1,9 @@
-﻿using OsmNightWatch.PbfParsing;
+﻿using OsmNightWatch.Lib;
+using OsmNightWatch.PbfParsing;
 
 namespace OsmNightWatch
 {
-    public class OsmDatabaseWithReplicationData : IOsmGeoFilterableSource
+    public class OsmDatabaseWithReplicationData : IOsmValidateSource
     {
         private readonly IOsmGeoFilterableSource baseSource;
 
@@ -144,6 +145,11 @@ namespace OsmNightWatch
                 Put(element);
                 yield return element;
             }
+        }
+
+        public void Validate(Action<OsmGeo> validator, FilterSettings filterSettings)
+        {
+            ((IOsmValidateSource)baseSource).Validate(validator, filterSettings);
         }
     }
 }

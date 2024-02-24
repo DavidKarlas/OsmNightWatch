@@ -85,22 +85,10 @@ internal class PbfDatabase : IOsmValidateSource
         }
     }
 
-    public IEnumerable<IssueData> Validate(Func<OsmGeo, IssueData?> validator, FilterSettings filterSettings)
+    public void Validate(Action<OsmGeo> validator, FilterSettings filterSettings)
     {
-        var issues = new ConcurrentBag<IssueData>();
-        //NodesParser.Process((way) => {
-        //    if (validator(way) is IssueData issue)
-        //    {
-        //        issues.Add(issue);
-        //    }
-        //}, filterSettings.Filters, index);
-        //WaysParser.Process((way) => {
-        //    if (validator(way) is IssueData issue)
-        //    {
-        //        issues.Add(issue);
-        //    }
-        //}, filterSettings.Filters, index);
-        return issues;
+        NodesParser.Process(validator, filterSettings.Filters, index);
+        WaysParser.Process(validator, filterSettings.Filters, index);
     }
 
     public OsmGeo Get(OsmGeoType type, long id)

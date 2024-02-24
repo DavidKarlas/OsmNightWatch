@@ -586,5 +586,13 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         }
     }
 
+    public void ProcessElement(OsmGeo element)
+    {
+        throw new NotImplementedException();
+    }
 
+    public IEnumerable<IssueData> ProcessPbf(IOsmGeoBatchSource newOsmSource)
+    {
+        throw new NotImplementedException();
+    }
 }

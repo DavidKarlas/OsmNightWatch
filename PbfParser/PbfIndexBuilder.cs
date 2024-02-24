@@ -190,34 +190,21 @@ namespace OsmNightWatch.PbfParsing
         {
             var binaryReader = new BinaryReader(cacheStream);
             nodeOffsets = new (long FirstNodeId, long FileOffset)[binaryReader.ReadInt32()];
-            long maxSize = 0;
             for (int i = 0; i < nodeOffsets.Length; i++)
             {
                 nodeOffsets[i] = (binaryReader.ReadInt64(), binaryReader.ReadInt64());
-                if (i > 1)
-                {
-                    maxSize = Math.Max(maxSize, nodeOffsets[i].FileOffset - nodeOffsets[i - 1].FileOffset);
-                }
             }
 
             wayOffsets = new (long FirstWayId, long FileOffset)[binaryReader.ReadInt32()];
             for (int i = 0; i < wayOffsets.Length; i++)
             {
                 wayOffsets[i] = (binaryReader.ReadInt64(), binaryReader.ReadInt64());
-                if (i > 1)
-                {
-                    maxSize = Math.Max(maxSize, wayOffsets[i].FileOffset - wayOffsets[i - 1].FileOffset);
-                }
             }
 
             relationOffsets = new (long FirstRelationId, long FileOffset)[binaryReader.ReadInt32()];
             for (int i = 0; i < relationOffsets.Length; i++)
             {
                 relationOffsets[i] = (binaryReader.ReadInt64(), binaryReader.ReadInt64());
-                if (i > 1)
-                {
-                    maxSize = Math.Max(maxSize, relationOffsets[i].FileOffset - relationOffsets[i - 1].FileOffset);
-                }
             }
             PbfPath = pbfPath;
         }

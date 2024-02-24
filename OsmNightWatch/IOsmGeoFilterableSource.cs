@@ -10,6 +10,6 @@ namespace OsmNightWatch
 
     public interface IOsmValidateSource : IOsmGeoFilterableSource
     {
-        IEnumerable<IssueData> Validate(Func<OsmGeo, IssueData?> validator, FilterSettings filterSettings);
+        void Validate(Action<OsmGeo> validator, FilterSettings filterSettings);
     }
 }

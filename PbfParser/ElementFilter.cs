@@ -5,7 +5,7 @@ namespace OsmNightWatch
 {
     public class FilterSettings
     {
-        public List<ElementFilter> Filters { get; init; } = new List<ElementFilter>();
+        public List<ElementFilter> Filters { get; set; } = new List<ElementFilter>();
     }
 
     public class ElementFilter
