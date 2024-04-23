@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Data.SQLite;
 using System.Text.Json;
 using NetTopologySuite.Index.Strtree;
+using System.Net.Http.Headers;
 
 namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 
@@ -14,7 +15,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
 {
     SQLiteConnection sqlConnection;
     private KeyValueDatabase database;
-
+    private HttpClient httpClient = new HttpClient();
     public AdminCountPerCountryAnalyzer(KeyValueDatabase database, string storePath)
     {
         this.database = database;
@@ -153,9 +154,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         }
         EndAdminsUpsertTransaction(true);
 
-        var expectedState = JsonSerializer.Deserialize<StateOfTheAdmins>(new HttpClient().GetStringAsync("https://davidupload.blob.core.windows.net/data/current.json").Result, new JsonSerializerOptions() {
-            ReadCommentHandling = JsonCommentHandling.Skip
-        });
+        var expectedState = GetExpectedState();
 
         if (currentState == null)
         {
@@ -237,6 +236,28 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
                 }
             }
         }
+    }
+
+    private StateOfTheAdmins? cachedExpectedState = null;
+    private EntityTagHeaderValue? latestEtag;
+
+    private StateOfTheAdmins GetExpectedState()
+    {
+        var httpRequest = new HttpRequestMessage(HttpMethod.Get, "https://github.com/DavidKarlas/OsmNightWatch/releases/latest/download/ExpectedStateOfAdmins.json");
+        if (latestEtag != null)
+            httpRequest.Headers.IfNoneMatch.Add(latestEtag);
+        var responseMessage = httpClient.Send(httpRequest);
+        if (cachedExpectedState != null && responseMessage.StatusCode == System.Net.HttpStatusCode.NotModified)
+            return cachedExpectedState;
+        var expectedStateJson = responseMessage.Content.ReadAsStringAsync().Result;
+        var expectedState = new StateOfTheAdmins() {
+            Countries = JsonSerializer.Deserialize<List<Country>>(expectedStateJson, new JsonSerializerOptions() {
+                ReadCommentHandling = JsonCommentHandling.Skip
+            })!
+        };
+        latestEtag = responseMessage.Headers.ETag;
+        cachedExpectedState = expectedState;
+        return expectedState;
     }
 
     public IEnumerable<IssueData> ProcessPbf(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource)
