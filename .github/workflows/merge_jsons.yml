@@ -1,8 +1,8 @@
 name: Merging countries jsons
 on:
   push:
-    paths:
-      - 'ExpectedStateOfAdmins/**'
+#    paths:
+#      - 'ExpectedStateOfAdmins/**'
 jobs:
   build:
     runs-on: ubuntu-latest
