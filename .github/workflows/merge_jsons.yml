@@ -18,3 +18,4 @@ jobs:
         if: github.ref == 'refs/heads/main'
         with:
           files: Release.txt
+          tag_name: ${{ github.run_id }}
