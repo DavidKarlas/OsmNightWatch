@@ -1,0 +1,14 @@
+{
+  "RelationId": 62149,
+  "EnglishName": "United Kingdom",
+  "Iso2": "GB",
+  "Iso3": "GBR",
+  "Admins": {
+    "4": [
+      58437,
+      58446,
+      58447,
+      156393
+    ]
+  }
+}

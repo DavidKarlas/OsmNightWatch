@@ -1,0 +1,14 @@
+{
+  "RelationId": 306004,
+  "EnglishName": "Northern Mariana Islands",
+  "Iso2": "MP",
+  "Iso3": "MNP",
+  "Admins": {
+    "6": [
+      306005,
+      306006,
+      306007,
+      7393728
+    ]
+  }
+}
