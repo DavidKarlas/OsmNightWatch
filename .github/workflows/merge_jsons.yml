@@ -13,9 +13,11 @@ jobs:
           sudo apt-get install jq
       - name: Merge jsons into ExpectedStateOfAdmins.json
         run: jq -s '. | map(.)' -c ./ExpectedStateOfAdmins/*.json > ExpectedStateOfAdmins.json
+      - name: Set current date as env variable
+        run: echo "NOW=$(date +'%Y-%m-%dT%H:%M:%S')" >> $GITHUB_ENV
       - name: Publish ExpectedStateOfAdmins.json as release
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
           files: Release.txt
-          tag_name: ${{ github.run_id }}
+          tag_name: $NOW
