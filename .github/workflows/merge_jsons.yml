@@ -22,5 +22,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main'
         with:
-          files: Release.txt
+          files: ExpectedStateOfAdmins.json
           tag_name: ${{ steps.set-time-now.outputs.TIME_NOW }}
