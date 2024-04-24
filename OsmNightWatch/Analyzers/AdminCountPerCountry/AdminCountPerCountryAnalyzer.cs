@@ -96,7 +96,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
                 new ElementFilter(OsmGeoType.Relation, new[] {
                     new TagFilter("boundary", "administrative"),
                     new TagFilter("type", "boundary"),
-                    new TagFilter("admin_level", "2", "3","4","5","6","7","8") },
+                    new TagFilter("admin_level", "2", "3","4","5","6","7","8", "9") },
                     needsWays: true,
                     needsNodes: true)
             }
