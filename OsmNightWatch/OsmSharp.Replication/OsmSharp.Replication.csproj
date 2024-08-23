@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>default</LangVersion>
+    <Nullable>enable</Nullable>
+    <PackageVersion>0.0.2-alpha</PackageVersion>
+    <Title>OsmSharp.Replication</Title>
+    <Authors>Ben Abelshausen</Authors>
+    <Description>An OSM replication package for OsmSharp.</Description>
+    <Copyright>Ben Abelshausen</Copyright>
+    <PackageProjectUrl>http://www.osmsharp.com/</PackageProjectUrl>
+    <PackageLicenseUrl>https://raw.githubusercontent.com/OsmSharp/replication/master/LICENSE</PackageLicenseUrl>
+    <PackageIconUrl>http://www.osmsharp.com/logos/osmsharp_logo64.png</PackageIconUrl>
+    <RepositoryUrl>https://github.com/OsmSharp/replication/</RepositoryUrl>
+    <PackageTags>openstreetmap,osm,diff,replication</PackageTags>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="OsmSharp" Version="7.0.0-pre011" />
+  </ItemGroup>
+
+</Project>
