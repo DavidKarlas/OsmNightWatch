@@ -284,8 +284,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                 }
             }
             database.RelationChangesTracker.AddWaysToTrack(coastlinesToUpsert);
-            // I think since we are fetching QueryAllCoastlinesWithCrossesReasonInDatabase this is not needed anymore
-            //ExpandListOfAllCoastlinesWithCoastlinesIntersectingBbox(waysToCheck);
+            Utils.BatchLoad(coastlinesToUpsert, newOsmSource, true, true);
             using (var transaction = sqlConnection.BeginTransaction())
             {
                 foreach (var wayId in coastlinesToDelete)
@@ -303,22 +302,6 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                 transaction.Commit();
             }
             return ProcessAllWays(newOsmSource);
-        }
-
-        private void ExpandListOfAllCoastlinesWithCoastlinesIntersectingBbox(HashSet<uint> waysToCheck)
-        {
-            using (var comm = sqlConnection.CreateCommand(@$"SELECT searchedCoastline.id FROM Coastlines searchedCoastline, Coastlines modifiedCoastline WHERE 
-                                                           modifiedCoastline.id IN ({string.Join("", "", waysToCheck)}) AND
-                                                           searchedCoastline.rowid IN (SELECT ROWID FROM SpatialIndex WHERE f_table_name='Coastlines' AND search_frame=modifiedCoastline.geom);"))
-            {
-                using var reader = comm.ExecuteReader();
-                {
-                    while (reader.Read())
-                    {
-                        waysToCheck.Add((uint)reader.GetInt32(0));
-                    }
-                }
-            }
         }
 
         public IEnumerable<IssueData> GetProblematicCoastlines()

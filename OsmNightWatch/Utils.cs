@@ -74,10 +74,10 @@ namespace OsmNightWatch
                         nodesToLoad.Add(member.Id);
                 }
             }
-            osmSource.BatchLoad(wayIds: waysToLoad);
+            var loadedWays = osmSource.BatchLoad(wayIds: waysToLoad);
             if (nodes)
             {
-                foreach (var way in relevantThings.Union(waysToLoad.Select(id => osmSource.Get(OsmGeoType.Way, id))).OfType<Way>())
+                foreach (var way in relevantThings.OfType<Way>().Union(loadedWays.ways))
                     nodesToLoad.UnionWith(way.Nodes);
                 osmSource.BatchLoad(nodeIds: nodesToLoad);
             }
@@ -89,7 +89,7 @@ namespace OsmNightWatch
             Dictionary<long, Relation> dictionaryOfLoadedRelations;
             while (true)
             {
-                dictionaryOfLoadedRelations = relationsBag.ToDictionary(r => r.Id!, r => r);
+                dictionaryOfLoadedRelations = relationsBag.ToDictionary(r => r.Id, r => r);
                 var unloadedChildren = new HashSet<long>();
                 foreach (var relation in dictionaryOfLoadedRelations.Values)
                 {
@@ -106,10 +106,19 @@ namespace OsmNightWatch
                 {
                     break;
                 }
-                osmSource.BatchLoad(null, null, unloadedChildren);
+                var batchLoadedRelations = osmSource.BatchLoad(relationIds: unloadedChildren).relations;
+                foreach (var loadedRelation in batchLoadedRelations)
+                {
+                    relationsBag.Add(loadedRelation);
+                }
                 foreach (var relationId in unloadedChildren)
                 {
-                    relationsBag.Add((Relation)osmSource.Get(OsmGeoType.Relation, relationId));
+                    var relation = (Relation)osmSource.Get(OsmGeoType.Relation, relationId);
+                    if (relation == null)
+                    {
+                        continue;
+                    }
+                    relationsBag.Add(relation);
                 }
             }
             return relationsBag.ToList();

@@ -10,7 +10,7 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry
         public string EnglishName { get; set; }
         public string Iso2 { get; set; }
         public string Iso3 { get; set; }
-        public Dictionary<string, List<long>> Admins { get; set; } = new();
+        public Dictionary<string, List<uint>> Admins { get; set; } = new();
         [JsonIgnore]
         public PreparedPolygon Polygon { get; set; }
         [JsonIgnore]

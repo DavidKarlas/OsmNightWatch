@@ -6,6 +6,7 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 public class RelationChangesTracker
 {
     public Dictionary<long, HashSet<uint>> NodeToWay = new();
+    public Dictionary<long, HashSet<uint>> NodeToRelation = new();
     public Dictionary<uint, HashSet<uint>> WayToRelation = new();
     public HashSet<uint> Relations = new();
     public HashSet<uint> TrackedRelations = new();
@@ -16,7 +17,7 @@ public class RelationChangesTracker
         this.database = database;
     }
 
-    public void AddRelationToTrack(uint relationId, List<Way> ways)
+    public void AddRelationToTrack(uint relationId, List<Way> ways, IEnumerable<long> nodes)
     {
         lock (Relations)
         {
@@ -42,6 +43,18 @@ public class RelationChangesTracker
                             NodeToWay.Add(node, new HashSet<uint>() { (uint)way.Id! });
                         }
                     }
+                }
+            }
+
+            foreach (var nodeId in nodes)
+            {
+                if (NodeToRelation.TryGetValue(nodeId, out var nodeRelations))
+                {
+                    nodeRelations.Add(relationId);
+                }
+                else
+                {
+                    NodeToRelation.Add(nodeId, new HashSet<uint>() { relationId });
                 }
             }
         }
@@ -100,6 +113,15 @@ public class RelationChangesTracker
         foreach (var wayId in waysSet)
         {
             database.GetWayToRelation(wayId, result);
+        }
+
+        foreach (var node in changeSet.OsmNodes)
+        {
+            if (node.Value == null || node.Value.Version < 2)
+            {
+                continue;
+            }
+            database.GetNodeToRelation(node.Key, result);
         }
 
         foreach (var relation in changeSet.Relations.Keys)

@@ -96,6 +96,7 @@ namespace OsmNightWatch.PbfParsing
     public interface IOsmGeoBatchSource : IOsmGeoSource
     {
         //TODO: Changes this weird API to GetNodes, GetWays and GetRelations
-        public (IReadOnlyCollection<Node> nodes, IReadOnlyCollection<Way> ways, IReadOnlyCollection<Relation> relations) BatchLoad(HashSet<long>? nodeIds = null, HashSet<long>? wayIds = null, HashSet<long>? relationIds = null);
+        (IReadOnlyCollection<Node> nodes, IReadOnlyCollection<Way> ways, IReadOnlyCollection<Relation> relations) BatchLoad(HashSet<long>? nodeIds = null, HashSet<long>? wayIds = null, HashSet<long>? relationIds = null);
+        void ClearBatchCache();
     }
 }

@@ -101,7 +101,7 @@ retry:
         database.SetTimestamp(replicationState.EndTimestamp);
         Log($"Analyzing changeset...");
         var newIssuesData = Analyze(analyzers, mergedChangeset, dbWithChanges, replicationState);
-
+        dbWithChanges.ClearBatchCache();
         newIssuesData.SetTimestampsAndLastKnownGood(oldIssuesData);
         oldIssuesData = newIssuesData;
         UploadIssues(replicationState, newIssuesData);

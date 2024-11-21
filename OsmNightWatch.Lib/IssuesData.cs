@@ -7,11 +7,8 @@ namespace OsmNightWatch.Lib
         public static HashSet<string> LastKnownGoodIssueTypes { get; } = new HashSet<string>()
         {
             "OpenAdminPolygon",
-            //"OpenAdminPolygon7",
-            //"OpenAdminPolygon8",
-            //"OpenAdminPolygon9",
-            //"OpenAdminPolygon10",
-            "BrokenCoastLine"
+            "BrokenCoastLine",
+            "AdminsState"
         };
         
         public DateTime DateTime { get; set; }

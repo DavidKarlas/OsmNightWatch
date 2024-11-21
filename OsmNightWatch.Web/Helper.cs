@@ -12,9 +12,10 @@ namespace OsmNightWatch.Web
             //("OpenAdminPolygon10", "Open  admins level 10.","/OpenAdminPolygons/10" ),    
             ("BrokenCoastLine", "Broken coastlines","/BrokenWaterCoastlines" ),
             ("AdminsState", "Admins State","/AdminsState" ),
+            ("AdminCentre","Admin Centres", "/AdminCentre" ),
             ("MissingWays","Admins without ways", "/AdminsWithoutWays" ),
             ("ImportantFeatures","Important Features", "/ImportantFeatures" )
-            
+
         };
 
         public static string ConvertToFullOsmType(string osmType)

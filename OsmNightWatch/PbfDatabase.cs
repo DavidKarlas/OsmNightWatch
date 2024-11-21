@@ -6,7 +6,9 @@ using System.Collections.Concurrent;
 internal class PbfDatabase : IOsmValidateSource
 {
     private PbfIndex index;
-
+    Dictionary<long, Node> nodesCache = new();
+    Dictionary<long, Way> waysCache = new();
+    Dictionary<long, Relation> relationsCache = new();
 
     public PbfDatabase(PbfIndex index)
     {
@@ -15,7 +17,26 @@ internal class PbfDatabase : IOsmValidateSource
 
     public (IReadOnlyCollection<Node> nodes, IReadOnlyCollection<Way> ways, IReadOnlyCollection<Relation> relations) BatchLoad(HashSet<long>? nodeIds = null, HashSet<long>? wayIds = null, HashSet<long>? relationIds = null)
     {
-        return (NodesParser.LoadNodes(nodeIds, index), WaysParser.LoadWays(wayIds, index), RelationsParser.LoadRelations(relationIds, index));
+        //TODO: Optimize this, by passing just nodeIds/wayIds/relationIds that are not already in cache
+        var parsedNodes = NodesParser.LoadNodes(nodeIds, index);
+        foreach (var node in parsedNodes)
+        {
+            nodesCache[node.Id] = node;
+            nodeIds!.Remove(node.Id);
+        }
+        var parsedWays = WaysParser.LoadWays(wayIds, index);
+        foreach (var way in parsedWays)
+        {
+            waysCache[way.Id] = way;
+            wayIds!.Remove(way.Id);
+        }
+        var parsedRelations = RelationsParser.LoadRelations(relationIds, index);
+        foreach (var relation in parsedRelations)
+        {
+            relationsCache[relation.Id] = relation;
+            relationIds!.Remove(relation.Id);
+        }
+        return (parsedNodes, parsedWays, parsedRelations);
     }
 
     public IEnumerable<OsmGeo> Filter(FilterSettings filterSettings)
@@ -108,11 +129,11 @@ internal class PbfDatabase : IOsmValidateSource
         switch (type)
         {
             case OsmGeoType.Node:
-                return NodesParser.LoadNodes(new HashSet<long>() { id }, index).Single();
+                return GetNode(id);
             case OsmGeoType.Way:
-                return WaysParser.LoadWays(new HashSet<long>() { id }, index).Single();
+                return GetWay(id);
             case OsmGeoType.Relation:
-                return RelationsParser.LoadRelations(new HashSet<long>() { id }, index).Single();
+                return GetRelation(id);
             default:
                 throw new NotImplementedException();
         }
@@ -120,16 +141,37 @@ internal class PbfDatabase : IOsmValidateSource
 
     public Node GetNode(long id)
     {
+        if (nodesCache.TryGetValue(id, out var node))
+        {
+            return node;
+        }
         return NodesParser.LoadNodes(new HashSet<long>() { id }, index).Single();
     }
 
     public Way GetWay(long id)
     {
+        if (waysCache.TryGetValue(id, out var way))
+        {
+            return way;
+        }
+
         return WaysParser.LoadWays(new HashSet<long>() { id }, index).Single();
     }
 
     public Relation GetRelation(long id)
     {
+        if (relationsCache.TryGetValue(id, out var relation))
+        {
+            return relation;
+        }
+
         return RelationsParser.LoadRelations(new HashSet<long>() { id }, index).Single();
+    }
+
+    public void ClearBatchCache()
+    {
+        nodesCache.Clear();
+        waysCache.Clear();
+        relationsCache.Clear();
     }
 }

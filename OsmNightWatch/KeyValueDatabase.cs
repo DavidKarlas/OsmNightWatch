@@ -182,6 +182,18 @@ namespace OsmNightWatch
                     }
                     tx.Put(db, keyBuffer, buffer[..^span.Length]);
                 }
+                db = OpenDb(tx, "Tracker_NodeToRelation");
+                keyBuffer = stackalloc byte[8];
+                foreach (var relations in tracker.NodeToRelation.OrderBy(n => n.Key))
+                {
+                    BinaryPrimitives.WriteInt64BigEndian(keyBuffer, relations.Key);
+                    var span = buffer;
+                    foreach (var relationId in relations.Value)
+                    {
+                        BinSerialize.WriteUInt(ref span, relationId);
+                    }
+                    tx.Put(db, keyBuffer, buffer[..^span.Length]);
+                }
                 db = OpenDb(tx, "Tracker_Relations");
                 keyBuffer = stackalloc byte[4];
                 foreach (var relation in tracker.Relations.OrderBy(n => n))
@@ -211,6 +223,19 @@ namespace OsmNightWatch
                 {
                     BinaryPrimitives.WriteUInt32BigEndian(keyBuffer, relations.Key);
                     GetWayToRelation(relations.Key, relations.Value);
+                    var span = buffer;
+                    foreach (var relationId in relations.Value)
+                    {
+                        BinSerialize.WriteUInt(ref span, relationId);
+                    }
+                    tx.Put(db, keyBuffer, buffer[..^span.Length]);
+                }
+                db = OpenDb(tx, "Tracker_NodeToRelation");
+                keyBuffer = stackalloc byte[8];
+                foreach (var relations in tracker.NodeToRelation)
+                {
+                    BinaryPrimitives.WriteInt64BigEndian(keyBuffer, relations.Key);
+                    GetNodeToRelation(relations.Key, relations.Value);
                     var span = buffer;
                     foreach (var relationId in relations.Value)
                     {
@@ -442,6 +467,27 @@ namespace OsmNightWatch
         public void Dispose()
         {
             dbEnv.Dispose();
+        }
+
+        public void GetNodeToRelation(long nodeId, HashSet<uint> relations)
+        {
+            if (transaction is not LightningTransaction tx)
+            {
+                throw new InvalidOperationException("Transaction not started!");
+            }
+            var db = OpenDb(tx, "Tracker_NodeToRelation");
+            Span<byte> keyBuffer = stackalloc byte[8];
+            BinaryPrimitives.WriteInt64BigEndian(keyBuffer, nodeId);
+
+            var read = tx.Get(db, keyBuffer);
+            if (read.resultCode == MDBResultCode.Success)
+            {
+                var buffer = read.value.AsSpan();
+                while (buffer.Length > 0)
+                {
+                    relations.Add(BinSerialize.ReadUInt(ref buffer));
+                }
+            }
         }
 
         public void GetNodeToWay(long nodeId, HashSet<uint> ways)

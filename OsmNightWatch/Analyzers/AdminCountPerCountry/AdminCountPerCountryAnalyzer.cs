@@ -104,6 +104,10 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
 
     private IEnumerable<IssueData> UpdateRelations((uint Id, Relation Relation)[] relevantThings, IOsmGeoSource newOsmSource)
     {
+        var expectedState = GetExpectedState();
+        var relationsToCheckAdminCenter = new HashSet<uint>(expectedState.Countries.SelectMany(c => c.Admins.OrderBy(a => a.Key).FirstOrDefault().Value ?? []));
+        expectedState.Countries.ForEach(c => relationsToCheckAdminCenter.Add(c.RelationId));
+
         StartAdminsUpsertTransaction();
         try
         {
@@ -117,7 +121,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
                     return;
                 }
                 var result = BuildPolygonFromRelation.BuildPolygon(admin.Relation, newOsmSource);
-                database.RelationChangesTracker.AddRelationToTrack(admin.Id, result.Ways);
+                database.RelationChangesTracker.AddRelationToTrack(admin.Id, result.Ways, admin.Relation.Members.Where(m => m.Type == OsmGeoType.Node).Select(m => m.Id));
                 NetTopologySuite.Geometries.Geometry? geom;
                 if (result.reason != null)
                 {
@@ -137,6 +141,12 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
                 {
                     geom = result.Polygon;
                 }
+
+                if (string.IsNullOrEmpty(result.reason) && relationsToCheckAdminCenter.Contains(admin.Id) && CheckAdminCentre(admin.Relation, newOsmSource) is string adminCentreReason)
+                {
+                    result.reason = adminCentreReason;
+                }
+
                 if (!admin.Relation.Tags.TryGetValue("name:en", out var friendlyName))
                 {
                     if (!admin.Relation.Tags.TryGetValue("name", out friendlyName))
@@ -154,8 +164,6 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         }
         EndAdminsUpsertTransaction(true);
 
-        var expectedState = GetExpectedState();
-
         if (currentState == null)
         {
             currentState = CreateCurrentState(expectedState!);
@@ -163,6 +171,20 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         else
         {
             currentState = UpdateCurrentState(currentState, relevantThings);
+        }
+
+        foreach (var (relationId, name, adminLevel, reason) in GetAdminsWithReason())
+        {
+            if (reason.Contains("admin_centre"))
+            {
+                yield return new IssueData() {
+                    IssueType = "AdminCentre",
+                    FriendlyName = name,
+                    OsmType = "R",
+                    OsmId = relationId,
+                    Details = reason
+                };
+            }
         }
 
         foreach (var (relationId, name, adminLevel, reason) in GetBrokenAdmins())
@@ -238,6 +260,39 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         }
     }
 
+    private string? CheckAdminCentre(Relation relation, IOsmGeoSource newOsmSource)
+    {
+        var adminCentreCount = relation.Members.Count(m => m.Role == "admin_centre");
+        if (adminCentreCount == 0)
+        {
+            return "Missing admin_centre role";
+        }
+        if (adminCentreCount > 1)
+        {
+            return "Too many admin_centre role roles";
+        }
+        var member = relation.Members.First(m => m.Role == "admin_centre");
+        if (member.Type != OsmGeoType.Node)
+        {
+            return "admin_centre member is not Node";
+        }
+        var node = newOsmSource.GetNode(member.Id);
+        if (!(node.Tags?.TryGetValue("place", out var placeValue) ?? false))
+            return $"admin_centre node({member.Id}) does not have 'place' tag.";
+        //switch (placeValue)
+        //{
+        //    case "town":
+        //    case "village":
+        //    case "city":
+        //    case "suburb":
+        //        return null;
+
+        //    default:
+        //        return $"admin_centre node has place value set to {placeValue}, but must be 'village', 'town' or 'city'.";
+        //}
+        return null;
+    }
+
     private StateOfTheAdmins? cachedExpectedState = null;
     private EntityTagHeaderValue? latestEtag;
 
@@ -282,6 +337,9 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
                 changedRelations.Add((uint)relation.Id);
             }
         }
+
+        var relevantThings = newOsmSource.BatchLoad(relationIds: new HashSet<long>(changedRelations.Select(r => (long)r))).relations;
+        Utils.BatchLoad(relevantThings, newOsmSource, true, true);
         //changedRelations.Add(3286892);// for testing specific relation build polygon logic
         return UpdateRelations(changedRelations.Select(id => (id, newOsmSource.GetRelation(id))).ToArray(), newOsmSource);
     }
@@ -524,6 +582,19 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
             }
         }
     }
+    public IEnumerable<(long RelationId, string name, int adminLevel, string reason)> GetAdminsWithReason()
+    {
+        using (var comm = sqlConnection.CreateCommand("SELECT id, friendlyname, adminlevel, reason FROM admins WHERE reason IS NOT NULL"))
+        {
+            using var reader = comm.ExecuteReader();
+            {
+                while (reader.Read())
+                {
+                    yield return (reader.GetInt64(0), reader.GetString(1), reader.GetInt32(2), reader.GetString(3));
+                }
+            }
+        }
+    }
 
     public bool DoesCountryExist(long relationId)
     {
@@ -541,9 +612,9 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         }
     }
 
-    public List<long> GetCountryAdmins(long relationId, int adminLevel)
+    public List<uint> GetCountryAdmins(long relationId, int adminLevel)
     {
-        var result = new List<long>();
+        var result = new List<uint>();
         byte[] buffer = new byte[15 * 1024 * 1024];
         var gaiaReader = new GaiaGeoReader();
         PreparedPolygon polygon = null;
@@ -594,11 +665,11 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
                     {
                         if (polygon.Contains(adminGeometry))
                         {
-                            result.Add(reader.GetInt64(0));
+                            result.Add((uint)reader.GetInt64(0));
                         }
                         else if (polygon.Overlaps(adminGeometry))
                         {
-                            result.Add(reader.GetInt64(0));
+                            result.Add((uint)reader.GetInt64(0));
                         }
                     }
                 }

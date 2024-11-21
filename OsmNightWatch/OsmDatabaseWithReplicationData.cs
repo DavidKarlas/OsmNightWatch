@@ -98,21 +98,73 @@ namespace OsmNightWatch
 
         public (IReadOnlyCollection<Node> nodes, IReadOnlyCollection<Way> ways, IReadOnlyCollection<Relation> relations) BatchLoad(HashSet<long>? nodeIds, HashSet<long>? wayIds, HashSet<long>? relationIds)
         {
-            var (nodes, ways, relations) = baseSource.BatchLoad(nodeIds, wayIds, relationIds);
-            foreach (var node in nodes)
+            var nodes = new List<Node>();
+            if (nodeIds != null)
             {
-                Put(node);
+                foreach (var nodeId in nodeIds.ToArray())
+                {
+                    if (changesetNodes.TryGetValue(nodeId, out var node))
+                    {
+                        nodeIds.Remove(nodeId);
+                        if (node != null)
+                            nodes.Add(node);
+                    }
+                    else if (keyValueDatabase.TryGetNode(nodeId, out var nodeFromDb))
+                    {
+                        nodeIds.Remove(nodeId);
+                        if (nodeFromDb != null)
+                            nodes.Add(nodeFromDb);
+                    }
+                }
             }
-            foreach (var way in ways)
+            var ways = new List<Way>();
+            if (wayIds != null)
             {
-                Put(way);
+                foreach (var wayId in wayIds.ToArray())
+                {
+                    if (changesetWays.TryGetValue(wayId, out var way))
+                    {
+                        wayIds.Remove(wayId);
+                        if (way != null)
+                            ways.Add(way);
+                    }
+                    else if (keyValueDatabase.TryGetWay(wayId, out var wayFromDb))
+                    {
+                        wayIds.Remove(wayId);
+                        if (wayFromDb != null)
+                            ways.Add(wayFromDb);
+                    }
+                }
             }
-            foreach (var relation in relations)
+            var relations = new List<Relation>();
+            if (relationIds != null)
             {
-                Put(relation);
+                foreach (var relationId in relationIds.ToArray())
+                {
+                    if (changesetRelations.TryGetValue(relationId, out var relation))
+                    {
+                        relationIds.Remove(relationId);
+                        if (relation != null)
+                            relations.Add(relation);
+                    }
+                    else if (keyValueDatabase.TryGetRelation(relationId, out var relationFromDb))
+                    {
+                        relationIds.Remove(relationId);
+                        if (relationFromDb != null)
+                            relations.Add(relationFromDb);
+                    }
+                }
             }
-
+            var baseResults = baseSource.BatchLoad(nodeIds, wayIds, relationIds);
+            nodes.AddRange(baseResults.nodes);
+            ways.AddRange(baseResults.ways);
+            relations.AddRange(baseResults.relations);
             return (nodes, ways, relations);
+        }
+
+        public void ClearBatchCache()
+        {
+            baseSource.ClearBatchCache();
         }
 
         public void StoreCache()
