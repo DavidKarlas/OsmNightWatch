@@ -20,11 +20,11 @@
             {
                 @if (@issuesData.DateTime.AddMinutes(10) < DateTime.UtcNow)
                 {
-                    <div class="alert alert-danger">Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</div>
+                    <div class="alert alert-danger">Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") (@issuesData.MinutelySequenceNumber)</div>
                 }
                 else
                 {
-                    <div>Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</div>
+                    <div>Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") (@issuesData.MinutelySequenceNumber)</div>
                 }
             }
             <a href="https://github.com/DavidKarlas/OsmNightWatch" type="button" class="btn btn-primary" target="_blank">
