@@ -53,3 +53,10 @@ Storage usage:
  * 3GB coastlines SQLite
  * 10GB admins SQLite
  * 10GB per month of changesets(can be reset with newer planet.pbf)
+
+## Wanted Features / TODO
+
+ * [Per country RSS feed](https://github.com/DavidKarlas/OsmNightWatch/issues/10) to allow local communites jump on broken admins in their countries
+ * New Analyzer for water bodies: [Issue](https://github.com/DavidKarlas/OsmNightWatch/issues/17)/[Prototype branch](https://github.com/DavidKarlas/OsmNightWatch/tree/waterBodiesPrototype)
+ * There is also one big project that I hope to get to one day, minutely monitoring of road network, this will be a bit tougher nut to track but I have some ideas :)
+ * And all other features requested in [Issues](https://github.com/DavidKarlas/OsmNightWatch/issues)
