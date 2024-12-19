@@ -210,6 +210,11 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                     };
                     var validate = new IsValidOp(geometry);
                     reason = validate.IsValid ? null : validate.ValidationError.ToString();
+                    if (reason == null && !geometry.IsSimple)
+                    {
+                        var simpleOp = new IsSimpleOp(geometry);
+                        reason = "Coastline is self-intersecting at " + simpleOp.NonSimpleLocation;
+                    }
                 }
                 allCoastlineWays![(uint)way.Id] = ((uint)way.Id, way.Nodes[0], way.Nodes[^1]);
             }
