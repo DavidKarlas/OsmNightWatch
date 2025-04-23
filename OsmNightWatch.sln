@@ -5,11 +5,11 @@ VisualStudioVersion = 17.3.32507.5
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OsmNightWatch", "OsmNightWatch\OsmNightWatch.csproj", "{4C392BB0-4E33-47A3-B56D-2D3B02F368C0}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OsmNightWatch.Web", "OsmNightWatch.Web\OsmNightWatch.Web.csproj", "{59939C38-3AC9-489A-9FFF-1B7A028CA0A7}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "OsmNightWatch.Lib", "OsmNightWatch.Lib\OsmNightWatch.Lib.csproj", "{3E802EBA-A872-42B2-A54B-6632152288A2}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "PbfParser", "PbfParser\PbfParser.csproj", "{E83ECE87-C64E-42B0-9817-4E72AEB63C47}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OsmNightWatch.Wasm", "OsmNightWatch.Wasm\OsmNightWatch.Wasm.csproj", "{95656216-F99D-4C85-ABF2-EE8FB14E9158}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,10 +21,6 @@ Global
 		{4C392BB0-4E33-47A3-B56D-2D3B02F368C0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4C392BB0-4E33-47A3-B56D-2D3B02F368C0}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{4C392BB0-4E33-47A3-B56D-2D3B02F368C0}.Release|Any CPU.Build.0 = Release|Any CPU
-		{59939C38-3AC9-489A-9FFF-1B7A028CA0A7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{59939C38-3AC9-489A-9FFF-1B7A028CA0A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{59939C38-3AC9-489A-9FFF-1B7A028CA0A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{59939C38-3AC9-489A-9FFF-1B7A028CA0A7}.Release|Any CPU.Build.0 = Release|Any CPU
 		{3E802EBA-A872-42B2-A54B-6632152288A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{3E802EBA-A872-42B2-A54B-6632152288A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3E802EBA-A872-42B2-A54B-6632152288A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -33,6 +29,10 @@ Global
 		{E83ECE87-C64E-42B0-9817-4E72AEB63C47}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E83ECE87-C64E-42B0-9817-4E72AEB63C47}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E83ECE87-C64E-42B0-9817-4E72AEB63C47}.Release|Any CPU.Build.0 = Release|Any CPU
+		{95656216-F99D-4C85-ABF2-EE8FB14E9158}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{95656216-F99D-4C85-ABF2-EE8FB14E9158}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{95656216-F99D-4C85-ABF2-EE8FB14E9158}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{95656216-F99D-4C85-ABF2-EE8FB14E9158}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
