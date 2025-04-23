@@ -90,7 +90,8 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                 {
                     if (candidate.WayId == item.WayId)
                         continue;
-                    if (candidate.Geometry.Relate(item.Geometry).IsCrosses(Dimension.Curve, Dimension.Curve))
+                    var matrix = candidate.Geometry.Relate(item.Geometry);
+                    if (matrix.IsCrosses(Dimension.Curve, Dimension.Curve) || matrix.IsOverlaps(Dimension.Curve, Dimension.Curve))
                     {
                         UpdateCoastlineReason(candidate.WayId, $"Crosses with {item.WayId}");
                         UpdateCoastlineReason(item.WayId, $"Crosses with {candidate.WayId}");
