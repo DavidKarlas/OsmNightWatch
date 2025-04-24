@@ -6,6 +6,7 @@ using NetTopologySuite.Operation.Buffer;
 using NetTopologySuite.Operation.Valid;
 using OsmNightWatch.Lib;
 using OsmNightWatch.PbfParsing;
+using OsmSharp.Tags;
 using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
@@ -19,6 +20,8 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
         private KeyValueDatabase database;
         private SQLiteConnection sqlConnection;
         private Dictionary<uint, (uint wayId, long firstNode, long lastNode)>? allCoastlineWays;
+        private HashSet<long> allCoastlineNodes = new();
+        private HashSet<long> allCoastlineRelations = new();
 
         public BrokenCoastlineAnalyzer(KeyValueDatabase database, string storePath)
         {
@@ -41,6 +44,8 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                 sqlConnection.ExecuteNonQuery("CREATE TABLE Coastlines (Id int PRIMARY KEY, FirstNode int, LastNode int, Reason text NULL);");
                 sqlConnection.ExecuteNonQuery("SELECT AddGeometryColumn('Coastlines', 'geom',  4326, 'GEOMETRY', 'XY');");
                 sqlConnection.ExecuteNonQuery("SELECT CreateSpatialIndex('Coastlines', 'geom');");
+
+                sqlConnection.ExecuteNonQuery("CREATE TABLE NodesAndRelationsWithCoastlineTag (Type string NOT NULL, Id int NOT NULL, Reason text NULL, PRIMARY KEY (Type, Id));");
                 transaction.Commit();
             }
             return sqlConnection;
@@ -49,10 +54,18 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
         public FilterSettings FilterSettings { get; } = new FilterSettings() {
             Filters = new List<ElementFilter>()
             {
-                new ElementFilter(OsmGeoType.Way,
-                    new[] { new TagFilter("natural", "coastline") },
+                new ElementFilter(OsmGeoType.Node,
+                    [new TagFilter("natural", "coastline")],
                     needsWays: false,
-                    needsNodes:true)
+                    needsNodes:false),
+                new ElementFilter(OsmGeoType.Way,
+                    [new TagFilter("natural", "coastline")],
+                    needsWays: false,
+                    needsNodes:true),
+                new ElementFilter(OsmGeoType.Relation,
+                    [new TagFilter("natural", "coastline")],
+                    needsWays: false,
+                    needsNodes:false)
             }
         };
 
@@ -243,11 +256,45 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             sqlConnection.ExecuteNonQuery($"DELETE FROM Coastlines WHERE Id = {wayId}");
         }
 
+        private void UpdateNodesAndRelationsWithCoastlineTag(MergedChangeset changeSet)
+        {
+            foreach (var node in changeSet.Nodes)
+            {
+                ProcessElement(node.Key, OsmGeoType.Node, node.Value?.Tags);
+            }
+        }
+
+        private void ProcessElement(long id, OsmGeoType elementType, TagsCollectionBase? tags)
+        {
+            if ((tags?.TryGetValue("natural", out var naturalValue) ?? false) && naturalValue == "coastline")
+            {
+                if (allCoastlineNodes.Add(id))
+                {
+                    using (var comm = sqlConnection.CreateCommand("INSERT INTO NodesAndRelationsWithCoastlineTag (Type, Id, reason) VALUES (@type, @id, @reason)"))
+                    {
+                        comm.Parameters.AddWithValue("type", elementType == OsmGeoType.Node ? "N" : "R");
+                        comm.Parameters.AddWithValue("id", id);
+                        comm.Parameters.AddWithValue("reason", "Should not have natural=coastline tag.");
+                        comm.ExecuteNonQuery();
+                    }
+                }
+            }
+            else if (allCoastlineNodes.Remove(id))
+            {
+                using (var comm = sqlConnection.CreateCommand("DELETE FROM NodesAndRelationsWithCoastlineTag WHERE Type = @type AND Id = @id;"))
+                {
+                    comm.Parameters.AddWithValue("type", elementType == OsmGeoType.Node ? "N" : "R");
+                    comm.Parameters.AddWithValue("id", id);
+                    comm.ExecuteNonQuery();
+                }
+            }
+        }
+
         public IEnumerable<IssueData> ProcessChangeset(MergedChangeset changeSet, IOsmGeoBatchSource newOsmSource)
         {
             if (allCoastlineWays == null)
             {
-                allCoastlineWays = LoadAllCoastline();
+                LoadAllCoastline();
             }
             var coastlinesToDelete = new HashSet<uint>();
             var coastlinesToUpsert = new List<Way>();
@@ -293,6 +340,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             Utils.BatchLoad(coastlinesToUpsert, newOsmSource, true, true);
             using (var transaction = sqlConnection.BeginTransaction())
             {
+                UpdateNodesAndRelationsWithCoastlineTag(changeSet);
                 foreach (var wayId in coastlinesToDelete)
                 {
                     DeleteCoastline(wayId);
@@ -329,9 +377,9 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             }
         }
 
-        private Dictionary<uint, (uint wayId, long firstNode, long lastNode)> LoadAllCoastline()
+        private void LoadAllCoastline()
         {
-            allCoastlineWays = new();
+            allCoastlineWays = new(1_500_000);
             using (var comm = sqlConnection.CreateCommand())
             {
                 comm.CommandText = $"SELECT coastlines.id, coastlines.firstNode, coastlines.lastNode FROM coastlines";
@@ -346,7 +394,6 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                     }
                 }
             }
-            return allCoastlineWays;
         }
 
         private IEnumerable<IssueData> ProcessAllWays(IOsmGeoBatchSource newOsmSource)
