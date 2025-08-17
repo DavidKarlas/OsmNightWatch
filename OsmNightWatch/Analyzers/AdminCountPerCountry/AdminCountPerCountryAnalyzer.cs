@@ -8,6 +8,7 @@ using System.Data.SQLite;
 using System.Text.Json;
 using NetTopologySuite.Index.Strtree;
 using System.Net.Http.Headers;
+using static OsmNightWatch.Utils;
 
 namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 
@@ -102,68 +103,88 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
             }
     };
 
-    private IEnumerable<IssueData> UpdateRelations((uint Id, Relation Relation)[] relevantThings, IOsmGeoSource newOsmSource)
+    private IEnumerable<IssueData> UpdateRelations((uint Id, Relation Relation)[] relevantThings, IOsmGeoBatchSource newOsmSource)
     {
+        Log("Starting admins upsert");
         var expectedState = GetExpectedState();
         var relationsToCheckAdminCenter = new HashSet<uint>(expectedState.Countries.SelectMany(c => c.Admins.OrderBy(a => a.Key).FirstOrDefault().Value ?? []));
         expectedState.Countries.ForEach(c => relationsToCheckAdminCenter.Add(c.RelationId));
 
-        StartAdminsUpsertTransaction();
         try
         {
-            Parallel.ForEach(relevantThings, new ParallelOptions() {
-                MaxDegreeOfParallelism = 32
-            }, (admin) => {
-                // Drop admin from database if it was deleted or doesn't meet admin criteria
-                if (admin.Relation == null || admin.Relation.Tags == null || !FilterSettings.Filters.Single().Matches(admin.Relation))
-                {
-                    DeleteAdmin(admin.Id);
-                    return;
-                }
-                var result = BuildPolygonFromRelation.BuildPolygon(admin.Relation, newOsmSource);
-                database.RelationChangesTracker.AddRelationToTrack(admin.Id, result.Ways, admin.Relation.Members.Where(m => m.Type == OsmGeoType.Node).Select(m => m.Id));
-                NetTopologySuite.Geometries.Geometry? geom;
-                if (result.reason != null)
-                {
-                    geom = null;
-                }
-                else if (result.Polygon.IsEmpty)
-                {
-                    geom = null;
-                    result.reason = "Polygon is broken.";
-                }
-                else if (!result.Polygon.IsValid)
-                {
-                    geom = null;
-                    result.reason = "Polygon is not valid.";
-                }
-                else
-                {
-                    geom = result.Polygon;
-                }
+            int batchSize = 10000;
+            int total = relevantThings.Length;
+            for (int i = 0; i < total; i += batchSize)
+            {
+                StartAdminsUpsertTransaction();
+                Utils.Log($"Processing batch {i / batchSize + 1} of {(total + batchSize - 1) / batchSize}.");
+                var batch = relevantThings.Skip(i).Take(batchSize).ToArray();
+                // BatchLoad for the current batch
+                var batchRelationIds = batch.Select(b => (long)b.Id).ToHashSet();
+                Log("Starting batch load");
+                Utils.BatchLoad(batch.Select(b => b.Relation), newOsmSource, true, true);
+                Log("Finished batch load");
 
-                if (string.IsNullOrEmpty(result.reason) && relationsToCheckAdminCenter.Contains(admin.Id) && CheckAdminCentre(admin.Relation, newOsmSource) is string adminCentreReason)
-                {
-                    result.reason = adminCentreReason;
-                }
-
-                if (!admin.Relation.Tags.TryGetValue("name:en", out var friendlyName))
-                {
-                    if (!admin.Relation.Tags.TryGetValue("name", out friendlyName))
+                Parallel.ForEach(batch, new ParallelOptions() {
+                    MaxDegreeOfParallelism = 32
+                }, (admin) => {
+                    // Drop admin from database if it was deleted or doesn't meet admin criteria
+                    if (admin.Relation == null || admin.Relation.Tags == null || !FilterSettings.Filters.Single().Matches(admin.Relation))
                     {
-                        friendlyName = "";
+                        DeleteAdmin(admin.Id);
+                        return;
                     }
-                }
-                UpsertAdmin(admin.Id, friendlyName, int.Parse(admin.Relation.Tags!["admin_level"]), geom, result.reason);
-            });
+                    var result = BuildPolygonFromRelation.BuildPolygon(admin.Relation, newOsmSource);
+                    database.RelationChangesTracker.AddRelationToTrack(admin.Id, result.Ways, admin.Relation.Members.Where(m => m.Type == OsmGeoType.Node).Select(m => m.Id));
+                    NetTopologySuite.Geometries.Geometry? geom;
+                    if (result.reason != null)
+                    {
+                        geom = null;
+                    }
+                    else if (result.Polygon.IsEmpty)
+                    {
+                        geom = null;
+                        result.reason = "Polygon is broken.";
+                    }
+                    else if (!result.Polygon.IsValid)
+                    {
+                        geom = null;
+                        result.reason = "Polygon is not valid.";
+                    }
+                    else
+                    {
+                        geom = result.Polygon;
+                    }
+
+                    if (string.IsNullOrEmpty(result.reason) && relationsToCheckAdminCenter.Contains(admin.Id) && CheckAdminCentre(admin.Relation, newOsmSource) is string adminCentreReason)
+                    {
+                        result.reason = adminCentreReason;
+                    }
+
+                    if (!admin.Relation.Tags.TryGetValue("name:en", out var friendlyName))
+                    {
+                        if (!admin.Relation.Tags.TryGetValue("name", out friendlyName))
+                        {
+                            friendlyName = "";
+                        }
+                    }
+                    UpsertAdmin(admin.Id, friendlyName, int.Parse(admin.Relation.Tags!["admin_level"]), geom, result.reason);
+                });
+
+                // Clear batch cache after each batch
+                newOsmSource.ClearBatchCache();
+                database.WriteRelationChangesTracker(database.RelationChangesTracker);
+                EndAdminsUpsertTransaction(false);
+            }
         }
         catch
         {
-            EndAdminsUpsertTransaction(false);
             throw;
         }
         EndAdminsUpsertTransaction(true);
-
+        Log("Finished admins upsert");
+        newOsmSource.ClearBatchCache();
+        Log("Start comparing admins");
         if (currentState == null)
         {
             currentState = CreateCurrentState(expectedState!);
@@ -258,6 +279,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
                 }
             }
         }
+        Log("Finished comparing admins");
     }
 
     private string? CheckAdminCentre(Relation relation, IOsmGeoSource newOsmSource)
@@ -317,7 +339,9 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
 
     public IEnumerable<IssueData> ProcessPbf(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource)
     {
-        Utils.BatchLoad(relevantThings, newOsmSource, true, true);
+        //Log("Starting batch load");
+        //Utils.BatchLoad(relevantThings, newOsmSource, true, true);
+        //Log("Finished batch load");
         return UpdateRelations(relevantThings.Select(r => ((uint)r.Id, (Relation)r)).ToArray(), newOsmSource);
     }
 

@@ -9,10 +9,15 @@ using OsmSharp.Changesets;
 using OsmSharp.Replication;
 using System.IO.Compression;
 using System.Xml.Serialization;
+using static OsmNightWatch.Utils;
 
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
-var dataStoragePath = Path.GetFullPath("NightWatchDatabase");
+// Use volume path if provided, else default to local folder
+var dataStoragePathEnv = Environment.GetEnvironmentVariable("DATA_STORAGE_PATH");
+var dataStoragePath = string.IsNullOrWhiteSpace(dataStoragePathEnv)
+    ? Path.GetFullPath("NightWatchDatabase")
+    : Path.GetFullPath(dataStoragePathEnv);
 Directory.CreateDirectory(dataStoragePath);
 var path = Directory.GetFiles(dataStoragePath, "planet-*.osm.pbf").OrderBy(f => f).LastOrDefault();
 if (path == null || !PbfIndexBuilder.DoesIndexExist(path))
@@ -52,10 +57,12 @@ if (currentTimeStamp == null)
 {
     foreach (var analyzer in analyzers)
     {
-        var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings).ToArray();
         Log($"Starting {analyzer.AnalyzerName}...");
+        var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings).ToArray();
+        Log($"Filtered relevant things for {analyzer.AnalyzerName}...");
         var issues = analyzer.ProcessPbf(relevantThings, dbWithChanges);
-        Log($"Found {issues.Count()} issues.");
+        Log($"Found {issues.Count()} issues using pbf.");
+        dbWithChanges.ClearBatchCache();
     }
     Log("Storing relevant elements into LMDB.");
     dbWithChanges.StoreCache();
@@ -114,11 +121,6 @@ retry:
         database.AbortTransaction();
         goto retry;
     }
-}
-
-static void Log(string message)
-{
-    Console.WriteLine(DateTime.Now.ToString("s") + ": " + message);
 }
 
 string DiffUrl(ReplicationConfig config, string filePath)

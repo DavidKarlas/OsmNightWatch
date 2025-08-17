@@ -9,6 +9,7 @@ using OsmNightWatch.PbfParsing;
 using System;
 using System.Collections.Generic;
 using System.Data.SQLite;
+using static OsmNightWatch.Utils;
 
 namespace OsmNightWatch.Analyzers.BrokenCoastline
 {
@@ -58,10 +59,13 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
 
         public IEnumerable<IssueData> ProcessPbf(IEnumerable<OsmGeo> relevantThings, IOsmGeoBatchSource newOsmSource)
         {
+            Log("Starting Batch Load");
             Utils.BatchLoad(relevantThings, newOsmSource, true, true);
+            Log("Finished Batch Load");
             allCoastlineWays = new(1_500_000);
             var list = new List<(uint WayId, Geometry Geometry)>(1_500_000);
             database.RelationChangesTracker.AddWaysToTrack(relevantThings.OfType<Way>());
+            Log("Starting Way to Sqlite conversion");
             using (var transaction = sqlConnection.BeginTransaction())
             {
                 foreach (Way way in relevantThings)
@@ -73,7 +77,9 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                 UpdateCrossesWithReason(list, new());
                 transaction.Commit();
             }
-            return ProcessAllWays(newOsmSource);
+            newOsmSource.ClearBatchCache();
+            Log("Finished Way to Sqlite conversion");
+            return ProcessAllWays();
         }
 
         private void UpdateCrossesWithReason(List<(uint WayId, Geometry Geometry)> list, HashSet<uint> allCoastlinesWithCrossesReasonInDatabase)
@@ -307,7 +313,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                 UpdateCrossesWithReason(list, allCoastlinesWithCrossesReasonInDatabase);
                 transaction.Commit();
             }
-            return ProcessAllWays(newOsmSource);
+            return ProcessAllWays();
         }
 
         public IEnumerable<IssueData> GetProblematicCoastlines()
@@ -349,8 +355,9 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             return allCoastlineWays;
         }
 
-        private IEnumerable<IssueData> ProcessAllWays(IOsmGeoBatchSource newOsmSource)
+        private IEnumerable<IssueData> ProcessAllWays()
         {
+            Log("Starting CoastlineValidationTest");
             var (issuesNodes, issuesWays) = new CoastlineValidationTest().Visit(allCoastlineWays!.Values);
             if (issuesWays.Count > 0)
             {
@@ -382,6 +389,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             {
                 yield return issue;
             }
+            Log("Finished CoastlineValidationTest");
         }
     }
 }

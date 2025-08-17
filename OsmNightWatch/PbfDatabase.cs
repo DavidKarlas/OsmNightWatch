@@ -170,8 +170,10 @@ internal class PbfDatabase : IOsmValidateSource
 
     public void ClearBatchCache()
     {
+        Utils.Log("Clearing batch cache");
         nodesCache.Clear();
         waysCache.Clear();
         relationsCache.Clear();
+        Utils.Log("Cleared batch cache");
     }
 }
