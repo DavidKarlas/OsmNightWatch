@@ -4,7 +4,7 @@ using NetTopologySuite.IO;
 using OsmNightWatch.Lib;
 using OsmNightWatch.PbfParsing;
 using System.Collections.Concurrent;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 using System.Text.Json;
 using NetTopologySuite.Index.Strtree;
 using System.Net.Http.Headers;
@@ -13,24 +13,31 @@ namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 
 public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
 {
-    SQLiteConnection sqlConnection;
+    SqliteConnection sqlConnection;
     private KeyValueDatabase database;
     private HttpClient httpClient = new HttpClient();
     public AdminCountPerCountryAnalyzer(KeyValueDatabase database, string storePath)
     {
         this.database = database;
-        sqlConnection = new SQLiteConnection($"Data Source={Path.Combine(storePath, "sqlite.db")};Version=3;");
+        sqlConnection = new SqliteConnection($"Data Source={Path.Combine(storePath, "sqlite.db")}");
         Initialize();
     }
 
     public void Initialize()
     {
         sqlConnection.Open();
-        sqlConnection.EnableExtensions(true);
-        sqlConnection.LoadExtension("mod_spatialite");
+        Console.WriteLine("H1");
+        sqlConnection.EnableExtensions();
+        Console.WriteLine("H2");
+        using (var enable = sqlConnection.CreateCommand()) { enable.CommandText = "PRAGMA enable_load_extension = 1;"; enable.ExecuteNonQuery(); }
+        Console.WriteLine("H3");
+        using (var load = sqlConnection.CreateCommand()) { load.CommandText = "SELECT load_extension('mod_spatialite')"; load.ExecuteNonQuery(); }
+        Console.WriteLine("H4");
         using var existsCommand = sqlConnection.CreateCommand("SELECT name FROM sqlite_master WHERE type='table' AND name='Admins';");
+        Console.WriteLine("H5");
         if (existsCommand.ExecuteScalar() == null)
         {
+            Console.WriteLine("H6");
             using var transaction = sqlConnection.BeginTransaction();
             sqlConnection.ExecuteNonQuery("SELECT InitSpatialMetaData();");
             sqlConnection.ExecuteNonQuery("CREATE TABLE Admins (Id int PRIMARY KEY, FriendlyName text, AdminLevel int, Reason text NULL);");
@@ -475,7 +482,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
             {
                 while (reader.Read())
                 {
-                    if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                    if (reader.IsDBNull(1))
                         continue;
 
                     var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
@@ -496,8 +503,9 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
             {
                 while (reader.Read())
                 {
-                    if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                    if (reader.IsDBNull(1))
                         continue;
+
                     var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
                     if (read == buffer.Length)
                         throw new Exception("Too big byte array for buffer!");
@@ -626,7 +634,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
             {
                 while (reader.Read())
                 {
-                    if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                    if (reader.IsDBNull(1))
                         return result;
 
                     var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
@@ -653,7 +661,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
             {
                 while (reader.Read())
                 {
-                    if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                    if (reader.IsDBNull(1))
                         continue;
                     var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
                     if (read == buffer.Length)

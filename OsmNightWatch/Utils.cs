@@ -1,7 +1,7 @@
 ﻿using OsmNightWatch.Analyzers.ImportantFeatures;
 using OsmNightWatch.PbfParsing;
 using System.Collections.Concurrent;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 
 namespace OsmNightWatch
 {
@@ -45,14 +45,14 @@ namespace OsmNightWatch
             return datetime;
         }
 
-        public static void ExecuteNonQuery(this SQLiteConnection connection, string commandText)
+        public static void ExecuteNonQuery(this SqliteConnection connection, string commandText)
         {
             using var command = connection.CreateCommand();
             command.CommandText = commandText;
             command.ExecuteNonQuery();
         }
 
-        public static SQLiteCommand CreateCommand(this SQLiteConnection connection, string commandText)
+        public static SqliteCommand CreateCommand(this SqliteConnection connection, string commandText)
         {
             var command = connection.CreateCommand();
             command.CommandText = commandText;

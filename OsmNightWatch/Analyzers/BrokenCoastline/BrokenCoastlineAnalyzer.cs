@@ -8,7 +8,7 @@ using OsmNightWatch.Lib;
 using OsmNightWatch.PbfParsing;
 using System;
 using System.Collections.Generic;
-using System.Data.SQLite;
+using Microsoft.Data.Sqlite;
 
 namespace OsmNightWatch.Analyzers.BrokenCoastline
 {
@@ -17,7 +17,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
         public string AnalyzerName => "BrokenCoastLine";
 
         private KeyValueDatabase database;
-        private SQLiteConnection sqlConnection;
+        private SqliteConnection sqlConnection;
         private Dictionary<uint, (uint wayId, long firstNode, long lastNode)>? allCoastlineWays;
 
         public BrokenCoastlineAnalyzer(KeyValueDatabase database, string storePath)
@@ -26,13 +26,14 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
             sqlConnection = CreateConnection(storePath);
         }
 
-        private SQLiteConnection CreateConnection(string storePath)
+        private SqliteConnection CreateConnection(string storePath)
         {
-            var sqlConnection = new SQLiteConnection($"Data Source={Path.Combine(storePath, "coastlineSqlite.db")};Version=3;");
+            var sqlConnection = new SqliteConnection($"Data Source={Path.Combine(storePath, "coastlineSqlite.db")}");
 
             sqlConnection.Open();
-            sqlConnection.EnableExtensions(true);
-            sqlConnection.LoadExtension("mod_spatialite");
+            sqlConnection.EnableExtensions();
+            //using (var enable = sqlConnection.CreateCommand()) { enable.CommandText = "PRAGMA enable_load_extension = 1;"; enable.ExecuteNonQuery(); }
+            using (var load = sqlConnection.CreateCommand()) { load.CommandText = "SELECT load_extension('mod_spatialite')"; load.ExecuteNonQuery(); }
             var existsCommand = sqlConnection.CreateCommand("SELECT name FROM sqlite_master WHERE type='table' AND name='Coastlines';");
             if (existsCommand.ExecuteScalar() == null)
             {
@@ -150,7 +151,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
                 {
                     while (reader.Read())
                     {
-                        if (reader.GetFieldAffinity(1) == TypeAffinity.Null)
+                        if (reader.IsDBNull(1))
                             continue; //throw new InvalidOperationException("Why is this here? How can geometry be null but still find spatial index match?");
                         var read = reader.GetBytes(1, 0, buffer, 0, buffer.Length);
                         if (read == buffer.Length)

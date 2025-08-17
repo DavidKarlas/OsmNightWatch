@@ -1,7 +1,7 @@
-﻿using LibDeflate;
+﻿using System.Buffers;
 using System.Buffers.Binary;
-using System.Buffers;
 using System.Collections.Concurrent;
+using System.IO.Compression;
 
 namespace OsmNightWatch.PbfParsing
 {
@@ -60,8 +60,20 @@ namespace OsmNightWatch.PbfParsing
             uncompressedDataSize = BinSerialize.ReadProtoUInt32(ref readDataR);
             var compressedDataSize = BinSerialize.ReadProtoByteArraySize(ref readDataR).size;
             uncompressbuffer = ArrayPool<byte>.Shared.Rent(16 * 1024 * 1024);
-            using var decompressor = new ZlibDecompressor();
-            var state = decompressor.Decompress(readDataR.Slice(0, compressedDataSize), uncompressbuffer, out int written);
+            var ms = new MemoryStream(readDataR.Slice(0, compressedDataSize).ToArray());
+            ms.Position = 0;
+            using var zlib = new ZLibStream(ms, CompressionMode.Decompress);
+            var additionalBytes = zlib.Read(uncompressbuffer, 0, (int)uncompressedDataSize);
+            var written = additionalBytes;
+            while (additionalBytes > 0)
+            {
+                if (written == uncompressedDataSize)
+                    break;
+                additionalBytes = zlib.Read(uncompressbuffer, written, (int)(uncompressedDataSize - written));
+                if (additionalBytes == 0)
+                    break;
+                written += additionalBytes;
+            }
             if (uncompressedDataSize != written)
             {
                 throw new Exception();

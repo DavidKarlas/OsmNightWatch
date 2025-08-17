@@ -1,11 +1,11 @@
-﻿using LibDeflate;
-using OsmSharp;
+﻿using OsmSharp;
 using System;
 using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -117,16 +117,7 @@ namespace OsmNightWatch.PbfParsing
         static (OsmGeoType Type, long Id) ParseBlob(byte[] readBuffer)
         {
             ReadOnlySpan<byte> readDataR = readBuffer;
-            var uncompressedDataSize = BinSerialize.ReadProtoUInt32(ref readDataR);
-            var compressedDataSize = BinSerialize.ReadProtoByteArraySize(ref readDataR).size;
-            var uncompressbuffer = ArrayPool<byte>.Shared.Rent(16 * 1024 * 1024);
-            using Decompressor decompressor = new ZlibDecompressor();
-            decompressor.Decompress(readDataR.Slice(0, compressedDataSize), uncompressbuffer, out int written);
-            if (uncompressedDataSize != written)
-            {
-                throw new Exception();
-            }
-            var uncompressedData = new ReadOnlySpan<byte>(uncompressbuffer, 0, (int)uncompressedDataSize);
+            ParsingHelper.Decompress(ref readDataR, out var uncompressbuffer, out ReadOnlySpan<byte> uncompressedData, out var uncompressedDataSize);
             var stringTableSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
             uncompressedData = uncompressedData.Slice(stringTableSize);
             var primitiveGroupSize = BinSerialize.ReadProtoByteArraySize(ref uncompressedData).size;
@@ -312,8 +303,7 @@ namespace OsmNightWatch.PbfParsing
             var sortedElements = elementsToLoad.ToArray();
             Array.Sort(sortedElements);
 
-            (long Id, long Offset)[] offsets = type switch
-            {
+            (long Id, long Offset)[] offsets = type switch {
                 OsmGeoType.Node => nodeOffsets,
                 OsmGeoType.Way => wayOffsets,
                 OsmGeoType.Relation => relationOffsets,

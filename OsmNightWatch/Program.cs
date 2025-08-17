@@ -10,9 +10,14 @@ using OsmSharp.Replication;
 using System.IO.Compression;
 using System.Xml.Serialization;
 
+SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_sqlite3());
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
-var dataStoragePath = Path.GetFullPath("NightWatchDatabase");
+// Use volume path if provided, else default to local folder
+var dataStoragePathEnv = Environment.GetEnvironmentVariable("DATA_STORAGE_PATH");
+var dataStoragePath = string.IsNullOrWhiteSpace(dataStoragePathEnv)
+    ? Path.GetFullPath("NightWatchDatabase")
+    : Path.GetFullPath(dataStoragePathEnv);
 Directory.CreateDirectory(dataStoragePath);
 var path = Directory.GetFiles(dataStoragePath, "planet-*.osm.pbf").OrderBy(f => f).LastOrDefault();
 if (path == null || !PbfIndexBuilder.DoesIndexExist(path))
@@ -135,7 +140,9 @@ OsmChange DownloadChangeset(ReplicationConfig config, long sequenceNumber)
         {
             var replicationFilePath = ReplicationFilePath(sequenceNumber);
             var url = DiffUrl(config, replicationFilePath);
-            var cachePath = Path.Combine(@"C:\", "ReplicationCache", config.IsDaily ? "daily" : config.IsHourly ? "hour" : "minute", replicationFilePath);
+            // Store replication cache under the configured data storage path (works on Linux and Windows)
+            var replicationCacheRoot = Path.Combine(dataStoragePath, "ReplicationCache");
+            var cachePath = Path.Combine(replicationCacheRoot, config.IsDaily ? "daily" : config.IsHourly ? "hour" : "minute", replicationFilePath);
             if (ignoreCache || !File.Exists(cachePath))
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(cachePath));

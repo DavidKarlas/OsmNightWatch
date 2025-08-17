@@ -9,7 +9,6 @@ using OsmNightWatch.PbfParsing;
 using OsmSharp.Tags;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
-using System.Data.SQLite;
 using System.Reflection.PortableExecutable;
 
 namespace OsmNightWatch

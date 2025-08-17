@@ -1,0 +1,19 @@
+services:
+  osmnw:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 8g
+    image: osmnw:latest
+    environment:
+      DATA_STORAGE_PATH: /data
+    volumes:
+      - osmnw-data:/data
+    restart: unless-stopped
+
+volumes:
+  osmnw-data:
