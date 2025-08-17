@@ -2,11 +2,25 @@
 using OsmNightWatch.PbfParsing;
 using System.Collections.Concurrent;
 using Microsoft.Data.Sqlite;
+using System.Diagnostics;
 
 namespace OsmNightWatch
 {
     static class Utils
     {
+        public static void Log(string message)
+        {
+            var currentProcess = Process.GetCurrentProcess();
+
+            // Get memory usage in bytes
+            long memoryUsed = currentProcess.WorkingSet64;
+
+            double memoryUsedGB = memoryUsed / (1024.0 * 1024.0 * 1024.0);
+            var gcMemory = GC.GetTotalMemory(true) / (1024.0 * 1024.0 * 1024.0);
+            Console.WriteLine(DateTime.Now.ToString("s") + $" WM:{memoryUsedGB:F2}GB GC:{gcMemory:F2}GB: " + message);
+        }
+
+    
         public static string GetFriendlyName(this ImportantFeatureJson featureJson)
         {
             if (featureJson.tags.TryGetValue("name:en", out var nameEn))

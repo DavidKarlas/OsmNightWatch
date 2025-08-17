@@ -8,6 +8,7 @@ using Microsoft.Data.Sqlite;
 using System.Text.Json;
 using NetTopologySuite.Index.Strtree;
 using System.Net.Http.Headers;
+using static OsmNightWatch.Utils;
 
 namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 
@@ -111,6 +112,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
 
     private IEnumerable<IssueData> UpdateRelations((uint Id, Relation Relation)[] relevantThings, IOsmGeoSource newOsmSource)
     {
+        Log("Starting admins upsert");
         var expectedState = GetExpectedState();
         var relationsToCheckAdminCenter = new HashSet<uint>(expectedState.Countries.SelectMany(c => c.Admins.OrderBy(a => a.Key).FirstOrDefault().Value ?? []));
         expectedState.Countries.ForEach(c => relationsToCheckAdminCenter.Add(c.RelationId));
@@ -171,6 +173,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         }
         EndAdminsUpsertTransaction(true);
 
+        Log("Finished admins upsert");
         if (currentState == null)
         {
             currentState = CreateCurrentState(expectedState!);
@@ -265,6 +268,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
                 }
             }
         }
+        Log("Finished comparing admins");
     }
 
     private string? CheckAdminCentre(Relation relation, IOsmGeoSource newOsmSource)

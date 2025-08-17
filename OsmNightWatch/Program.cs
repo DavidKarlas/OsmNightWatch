@@ -9,8 +9,12 @@ using OsmSharp.Changesets;
 using OsmSharp.Replication;
 using System.IO.Compression;
 using System.Xml.Serialization;
+using static OsmNightWatch.Utils;
 
-SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_sqlite3());
+if(OperatingSystem.IsWindows())
+    SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_e_sqlite3());
+else
+    SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_sqlite3());
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
 // Use volume path if provided, else default to local folder
@@ -19,6 +23,7 @@ var dataStoragePath = string.IsNullOrWhiteSpace(dataStoragePathEnv)
     ? Path.GetFullPath("NightWatchDatabase")
     : Path.GetFullPath(dataStoragePathEnv);
 Directory.CreateDirectory(dataStoragePath);
+Log("Using data storage path: " + dataStoragePath);
 var path = Directory.GetFiles(dataStoragePath, "planet-*.osm.pbf").OrderBy(f => f).LastOrDefault();
 if (path == null || !PbfIndexBuilder.DoesIndexExist(path))
 {
@@ -32,7 +37,7 @@ if (path == null || !PbfIndexBuilder.DoesIndexExist(path))
     while (engine.IsRunning)
     {
         var torrent = engine.Torrents.Single();
-        Console.WriteLine($"Downloading {engine.Torrents.Single().Files.Single().Path} {torrent.Progress:0.00}% with speed {torrent.Monitor.DownloadRate / 1024.0 / 1024.0:0.00} MB/s.");
+        Log($"Downloading {engine.Torrents.Single().Files.Single().Path} {torrent.Progress:0.00}% with speed {torrent.Monitor.DownloadRate / 1024.0 / 1024.0:0.00} MB/s.");
         if (torrent.Complete)
             break;
         await Task.Delay(10_000);
@@ -57,10 +62,11 @@ if (currentTimeStamp == null)
 {
     foreach (var analyzer in analyzers)
     {
-        var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings).ToArray();
         Log($"Starting {analyzer.AnalyzerName}...");
+        var relevantThings = dbWithChanges.Filter(analyzer.FilterSettings).ToArray();
+        Log($"Filtered relevant things for {analyzer.AnalyzerName}...");
         var issues = analyzer.ProcessPbf(relevantThings, dbWithChanges);
-        Log($"Found {issues.Count()} issues.");
+        Log($"Found {issues.Count()} issues using pbf.");
     }
     Log("Storing relevant elements into LMDB.");
     dbWithChanges.StoreCache();
@@ -119,11 +125,6 @@ retry:
         database.AbortTransaction();
         goto retry;
     }
-}
-
-static void Log(string message)
-{
-    Console.WriteLine(DateTime.Now.ToString("s") + ": " + message);
 }
 
 string DiffUrl(ReplicationConfig config, string filePath)
