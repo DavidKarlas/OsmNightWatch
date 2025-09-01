@@ -27,18 +27,11 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
     public void Initialize()
     {
         sqlConnection.Open();
-        Console.WriteLine("H1");
         sqlConnection.EnableExtensions();
-        Console.WriteLine("H2");
-        using (var enable = sqlConnection.CreateCommand()) { enable.CommandText = "PRAGMA enable_load_extension = 1;"; enable.ExecuteNonQuery(); }
-        Console.WriteLine("H3");
-        using (var load = sqlConnection.CreateCommand()) { load.CommandText = "SELECT load_extension('mod_spatialite')"; load.ExecuteNonQuery(); }
-        Console.WriteLine("H4");
+        sqlConnection.LoadExtension("mod_spatialite");
         using var existsCommand = sqlConnection.CreateCommand("SELECT name FROM sqlite_master WHERE type='table' AND name='Admins';");
-        Console.WriteLine("H5");
         if (existsCommand.ExecuteScalar() == null)
         {
-            Console.WriteLine("H6");
             using var transaction = sqlConnection.BeginTransaction();
             sqlConnection.ExecuteNonQuery("SELECT InitSpatialMetaData();");
             sqlConnection.ExecuteNonQuery("CREATE TABLE Admins (Id int PRIMARY KEY, FriendlyName text, AdminLevel int, Reason text NULL);");

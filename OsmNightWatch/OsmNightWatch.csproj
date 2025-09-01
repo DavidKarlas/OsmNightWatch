@@ -12,19 +12,29 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.15.0" />
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.23.0" />
-    <PackageReference Include="LightningDB" Version="0.17.0" />
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.25.0" />
+    <PackageReference Include="LightningDB" Version="0.18.1" />
+    <PackageReference Include="mod_spatialite" Version="4.3.0.100-rc1" GeneratePathProperty="true" />
     <PackageReference Include="MonoTorrent" Version="3.0.3-alpha.unstable.rev0049" />
-    <PackageReference Include="NetTopologySuite" Version="2.5.0" />
+    <PackageReference Include="NetTopologySuite" Version="2.6.0" />
     <PackageReference Include="OsmSharp" Version="7.0.0-pre022" />
     <PackageReference Include="NetTopologySuite.IO.SpatiaLite" Version="2.0.0" />
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="9.0.8" />
-    <PackageReference Include="SQLitePCLRaw.core" Version="2.1.11" />
-    <PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="2.1.11" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.1" />
+    <PackageReference Include="SQLitePCLRaw.core" Version="3.0.1" />
+    <PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="3.0.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\OsmNightWatch.Lib\OsmNightWatch.Lib.csproj" />
     <ProjectReference Include="..\PbfParser\PbfParser.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="$(Pkgmod_spatialite)\runtimes\win-x64\native\*.*">
+      <Visible>false</Visible>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>%(Filename)%(Extension)</Link>
+    </None>
   </ItemGroup>
 </Project>
