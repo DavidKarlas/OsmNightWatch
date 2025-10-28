@@ -12,7 +12,11 @@ using System.Xml.Serialization;
 
 HttpClient httpClient = new HttpClient();
 ThreadLocal<XmlSerializer> ThreadLocalXmlSerializer = new ThreadLocal<XmlSerializer>(() => new XmlSerializer(typeof(OsmChange)));
-var dataStoragePath = Path.GetFullPath("NightWatchDatabase");
+// Use volume path if provided, else default to local folder
+var dataStoragePathEnv = Environment.GetEnvironmentVariable("DATA_STORAGE_PATH");
+var dataStoragePath = string.IsNullOrWhiteSpace(dataStoragePathEnv)
+    ? Path.GetFullPath("NightWatchDatabase")
+    : Path.GetFullPath(dataStoragePathEnv);
 Directory.CreateDirectory(dataStoragePath);
 var path = Directory.GetFiles(dataStoragePath, "planet-*.osm.pbf").OrderBy(f => f).LastOrDefault();
 if (path == null || !PbfIndexBuilder.DoesIndexExist(path))
