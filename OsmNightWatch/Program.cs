@@ -40,9 +40,12 @@ if (path == null || !PbfIndexBuilder.DoesIndexExist(path))
         Log($"Downloading {engine.Torrents.Single().Files.Single().Path} {torrent.Progress:0.00}% with speed {torrent.Monitor.DownloadRate / 1024.0 / 1024.0:0.00} MB/s.");
         if (torrent.Complete)
             break;
+        if(torrent.Progress == 100.0)
+            break;
         await Task.Delay(10_000);
     }
     path = engine.Torrents.Single().Files.Single().FullPath;
+    await engine.StopAllAsync();
 }
 
 using var database = new KeyValueDatabase(dataStoragePath);

@@ -33,7 +33,7 @@ namespace OsmNightWatch.Analyzers.BrokenCoastline
 
             sqlConnection.Open();
             sqlConnection.EnableExtensions();
-            sqlConnection.LoadExtension("mod_spatialite");
+            sqlConnection.ExecuteNonQuery("SELECT load_extension('mod_spatialite');");
             var existsCommand = sqlConnection.CreateCommand("SELECT name FROM sqlite_master WHERE type='table' AND name='Coastlines';");
             if (existsCommand.ExecuteScalar() == null)
             {

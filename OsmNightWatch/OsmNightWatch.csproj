@@ -19,7 +19,7 @@
     <PackageReference Include="NetTopologySuite" Version="2.6.0" />
     <PackageReference Include="OsmSharp" Version="7.0.0-pre022" />
     <PackageReference Include="NetTopologySuite.IO.SpatiaLite" Version="2.0.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="9.0.8" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.0-rc.2.25502.107" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.1" />
     <PackageReference Include="SQLitePCLRaw.core" Version="3.0.1" />
     <PackageReference Include="SQLitePCLRaw.provider.sqlite3" Version="3.0.1" />

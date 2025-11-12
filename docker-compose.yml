@@ -3,16 +3,17 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 8g
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '8.0'
+    #       memory: 64g
     image: osmnw:latest
     environment:
       DATA_STORAGE_PATH: /data
     volumes:
-      - osmnw-data:/data
+      #- osmnw-data:/data
+      - C:\DATA\DockerNw:/data
     restart: unless-stopped
 
 volumes:

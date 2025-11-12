@@ -9,6 +9,7 @@ using System.Text.Json;
 using NetTopologySuite.Index.Strtree;
 using System.Net.Http.Headers;
 using static OsmNightWatch.Utils;
+using System.Diagnostics;
 
 namespace OsmNightWatch.Analyzers.AdminCountPerCountry;
 
@@ -28,7 +29,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
     {
         sqlConnection.Open();
         sqlConnection.EnableExtensions();
-        sqlConnection.LoadExtension("mod_spatialite");
+        sqlConnection.ExecuteNonQuery("SELECT load_extension('mod_spatialite');");
         using var existsCommand = sqlConnection.CreateCommand("SELECT name FROM sqlite_master WHERE type='table' AND name='Admins';");
         if (existsCommand.ExecuteScalar() == null)
         {
@@ -51,47 +52,73 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
 
     public void EmptyUpsertAdmins(object param)
     {
-        var (adminsToUpsert, adminsToUpsertAbortOrCommitTask) = ((BlockingCollection<(long id, string friendlyName, int adminLevel, byte[]? polygon, string? reason)>, TaskCompletionSource<bool>))param;
-        var transaction = sqlConnection.BeginTransaction();
-        (long id, string friendlyName, int adminLevel, byte[]? polygon, string? reason) blob;
-        while (!adminsToUpsert.IsCompleted)
+        Log($"EmptyUpsertAdmins started.");
+        try
         {
-            if (!adminsToUpsert.TryTake(out blob, 100))
+
+            var (adminsToUpsert, adminsToUpsertAbortOrCommitTask) = ((BlockingCollection<(long id, string friendlyName, int adminLevel, byte[]? polygon, string? reason)>, TaskCompletionSource<bool>))param;
+            var transaction = sqlConnection.BeginTransaction();
+            var insertedCount = 0L;
+            var noInsertCount = 0L;
+            (long id, string friendlyName, int adminLevel, byte[]? polygon, string? reason) blob;
+            while (!adminsToUpsert.IsCompleted)
             {
-                continue;
+                if (!adminsToUpsert.TryTake(out blob, 100))
+                {
+                    noInsertCount++;
+                    if (noInsertCount >= 1000)
+                        Log("Waiting for admins 100 seconds to upsert...");
+                    continue;
+                }
+                noInsertCount = 0;
+                var (id, friendlyName, adminLevel, polygon, reason) = blob;
+                var sw = Stopwatch.StartNew();
+                Log($"Starting inserting {id} in EmptyUpsertAdmins...");
+                using (var comm = sqlConnection.CreateCommand("INSERT INTO Admins (Id, FriendlyName, AdminLevel, geom, reason) VALUES (@id, @friendlyName, @adminLevel, @geom, @reason) ON CONFLICT (Id) DO UPDATE SET geom = @geom, FriendlyName = @friendlyName, AdminLevel = @adminLevel, Reason = @reason"))
+                {
+                    comm.Parameters.AddWithValue("id", id);
+                    comm.Parameters.AddWithValue("friendlyName", friendlyName);
+                    comm.Parameters.AddWithValue("adminLevel", adminLevel);
+                    if (polygon != null)
+                    {
+                        comm.Parameters.AddWithValue("geom", polygon);
+                    }
+                    else
+                    {
+                        comm.Parameters.AddWithValue("geom", DBNull.Value);
+                    }
+                    comm.Parameters.AddWithValue("reason", reason ?? (object)DBNull.Value);
+                    Log($"Before executing inserting {id} in EmptyUpsertAdmins...");
+                    comm.ExecuteNonQuery();
+                    Log($"After executing inserting {id} in EmptyUpsertAdmins...");
+                    insertedCount++;
+                    if (insertedCount % 10_000 == 0)
+                    {
+                        Log($"Upserted {insertedCount} admins so far...");
+                    }
+                }
+                Log($"{AnalyzerName} - Upserted admin {id} in {sw.ElapsedMilliseconds} ms");
             }
-            var (id, friendlyName, adminLevel, polygon, reason) = blob;
-            using (var comm = sqlConnection.CreateCommand("INSERT INTO Admins (Id, FriendlyName, AdminLevel, geom, reason) VALUES (@id, @friendlyName, @adminLevel, @geom, @reason) ON CONFLICT (Id) DO UPDATE SET geom = @geom, FriendlyName = @friendlyName, AdminLevel = @adminLevel, Reason = @reason"))
+            var commitTransaction = adminsToUpsertAbortOrCommitTask.Task.Result;
+            if (commitTransaction)
             {
-                comm.Parameters.AddWithValue("id", id);
-                comm.Parameters.AddWithValue("friendlyName", friendlyName);
-                comm.Parameters.AddWithValue("adminLevel", adminLevel);
-                if (polygon != null)
-                {
-                    comm.Parameters.AddWithValue("geom", polygon);
-                }
-                else
-                {
-                    comm.Parameters.AddWithValue("geom", DBNull.Value);
-                }
-                comm.Parameters.AddWithValue("reason", reason ?? (object)DBNull.Value);
-                comm.ExecuteNonQuery();
+                transaction.Commit();
+            }
+            else
+            {
+                transaction.Dispose();
             }
         }
-        var commitTransaction = adminsToUpsertAbortOrCommitTask.Task.Result;
-        if (commitTransaction)
+        catch (Exception ex)
         {
-            transaction.Commit();
-        }
-        else
-        {
-            transaction.Dispose();
+            Log("Exception in EmptyUpsertAdmins..." + Environment.NewLine + ex.ToString());
         }
     }
 
     public string AnalyzerName => nameof(AdminCountPerCountryAnalyzer);
 
-    public FilterSettings FilterSettings { get; } = new FilterSettings() {
+    public FilterSettings FilterSettings { get; } = new FilterSettings()
+    {
         Filters = new List<ElementFilter>()
             {
                 new ElementFilter(OsmGeoType.Relation, new[] {
@@ -105,7 +132,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
 
     private IEnumerable<IssueData> UpdateRelations((uint Id, Relation Relation)[] relevantThings, IOsmGeoSource newOsmSource)
     {
-        Log("Starting admins upsert");
+        Log($"Starting admins upsert {relevantThings.Length}");
         var expectedState = GetExpectedState();
         var relationsToCheckAdminCenter = new HashSet<uint>(expectedState.Countries.SelectMany(c => c.Admins.OrderBy(a => a.Key).FirstOrDefault().Value ?? []));
         expectedState.Countries.ForEach(c => relationsToCheckAdminCenter.Add(c.RelationId));
@@ -113,9 +140,12 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         StartAdminsUpsertTransaction();
         try
         {
-            Parallel.ForEach(relevantThings, new ParallelOptions() {
-                MaxDegreeOfParallelism = 32
-            }, (admin) => {
+            Log($"Entering admins upsert loop {relevantThings.Length}");
+            Parallel.ForEach(relevantThings, new ParallelOptions()
+            {
+                MaxDegreeOfParallelism = 6
+            }, (admin) =>
+            {
                 // Drop admin from database if it was deleted or doesn't meet admin criteria
                 if (admin.Relation == null || admin.Relation.Tags == null || !FilterSettings.Filters.Single().Matches(admin.Relation))
                 {
@@ -180,7 +210,8 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         {
             if (reason.Contains("admin_centre"))
             {
-                yield return new IssueData() {
+                yield return new IssueData()
+                {
                     IssueType = "AdminCentre",
                     FriendlyName = name,
                     OsmType = "R",
@@ -198,7 +229,8 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
                 // that are often in Africa where relation consists of places nodes
                 // we can't fix them because no source for borders but also don't want
                 // to delete in OSM, but want to keep track...
-                yield return new IssueData() {
+                yield return new IssueData()
+                {
                     IssueType = "MissingWays",
                     FriendlyName = $"{name}({adminLevel})",
                     OsmType = "R",
@@ -212,7 +244,8 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
                 {
                     issueType += adminLevel;
                 }
-                yield return new IssueData() {
+                yield return new IssueData()
+                {
                     IssueType = issueType,
                     FriendlyName = name,
                     OsmType = "R",
@@ -228,7 +261,8 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
             var country = currentCountries[expectedCountry.RelationId];
             if (!country.IsValid)
             {
-                yield return new IssueData() {
+                yield return new IssueData()
+                {
                     IssueType = "AdminsState",
                     FriendlyName = "Missing " + expectedCountry.EnglishName,
                     OsmType = "R",
@@ -242,7 +276,8 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
 
                 foreach (var missingAdmin in expectedAdmins.Value.Except(actualAdmins))
                 {
-                    yield return new IssueData() {
+                    yield return new IssueData()
+                    {
                         IssueType = "AdminsState",
                         FriendlyName = $"{expectedCountry.EnglishName}({expectedAdmins.Key}) lost {missingAdmin}",
                         OsmType = "R",
@@ -252,7 +287,8 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
 
                 foreach (var extraAdmin in actualAdmins.Except(expectedAdmins.Value))
                 {
-                    yield return new IssueData() {
+                    yield return new IssueData()
+                    {
                         IssueType = "AdminsState",
                         FriendlyName = $"{expectedCountry.EnglishName}({expectedAdmins.Key}) gained {extraAdmin}",
                         OsmType = "R",
@@ -309,8 +345,10 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         if (cachedExpectedState != null && responseMessage.StatusCode == System.Net.HttpStatusCode.NotModified)
             return cachedExpectedState;
         var expectedStateJson = responseMessage.Content.ReadAsStringAsync().Result;
-        var expectedState = new StateOfTheAdmins() {
-            Countries = JsonSerializer.Deserialize<List<Country>>(expectedStateJson, new JsonSerializerOptions() {
+        var expectedState = new StateOfTheAdmins()
+        {
+            Countries = JsonSerializer.Deserialize<List<Country>>(expectedStateJson, new JsonSerializerOptions()
+            {
                 ReadCommentHandling = JsonCommentHandling.Skip
             })!
         };
@@ -381,7 +419,8 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         var newState = new StateOfTheAdmins(oldState.AdminsToCountry);
         foreach (var oldCountry in oldState.Countries)
         {
-            var currentCountry = new Country() {
+            var currentCountry = new Country()
+            {
                 EnglishName = oldCountry.EnglishName,
                 Iso2 = oldCountry.Iso2,
                 Iso3 = oldCountry.Iso3,
@@ -428,8 +467,10 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
     public StateOfTheAdmins CreateCurrentState(StateOfTheAdmins expectedState)
     {
         var newState = new StateOfTheAdmins();
-        Parallel.ForEach(expectedState.Countries, new ParallelOptions() { MaxDegreeOfParallelism = 16 }, (expectedCountry) => {
-            var currentCountry = new Country() {
+        Parallel.ForEach(expectedState.Countries, new ParallelOptions() { MaxDegreeOfParallelism = 16 }, (expectedCountry) =>
+        {
+            var currentCountry = new Country()
+            {
                 EnglishName = expectedCountry.EnglishName,
                 Iso2 = expectedCountry.Iso2,
                 Iso3 = expectedCountry.Iso3,
@@ -540,7 +581,8 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
         }
         var adminsToUpsert = AdminsToUpsert = new(128);
         var adminsToUpsertAbortOrCommitTask = AdminsToUpsertAbortOrCommitTask = new TaskCompletionSource<bool>();
-        Task.Run(() => {
+        Task.Run(() =>
+        {
             EmptyUpsertAdmins((adminsToUpsert, adminsToUpsertAbortOrCommitTask));
         });
     }
@@ -572,6 +614,7 @@ public partial class AdminCountPerCountryAnalyzer : IOsmAnalyzer, IDisposable
             data = gaiaWriter.Write(polygon);
         }
         AdminsToUpsert.Add((id, friendlyName, adminLevel, data, reason));
+        Log($"Queued admin {id} for upsert {AdminsToUpsert.Count}.");
     }
 
     public IEnumerable<(long RelationId, string name, int adminLevel, string reason)> GetBrokenAdmins()
