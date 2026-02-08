@@ -18,14 +18,13 @@
             }
             else
             {
-                @if (@issuesData.DateTime.AddMinutes(10) < DateTime.UtcNow)
-                {
-                    <div class="alert alert-danger">Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") (@issuesData.MinutelySequenceNumber)</div>
-                }
-                else
-                {
-                    <div>Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") (@issuesData.MinutelySequenceNumber)</div>
-                }
+                <div class="@(issuesData.DateTime.AddMinutes(10) < DateTime.UtcNow ? "alert alert-danger" : "")">
+                    Last update: @issuesData.DateTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") (@issuesData.MinutelySequenceNumber)
+                    @if (issuesData.LastKnownGoodMinutelySequenceNumber > 0)
+                    {
+                        <span> | Last known good: @issuesData.LastKnownGoodDateTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") (@issuesData.LastKnownGoodMinutelySequenceNumber)</span>
+                    }
+                </div>
             }
             <a href="https://github.com/DavidKarlas/OsmNightWatch" type="button" class="btn btn-primary" target="_blank">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-github" viewBox="0 0 16 16">
