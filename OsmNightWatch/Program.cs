@@ -47,7 +47,7 @@ var pbfDb = new PbfDatabase(index);
 var analyzers = new IOsmAnalyzer[] {
     new AdminCountPerCountryAnalyzer(database, dataStoragePath),
     new BrokenCoastlineAnalyzer(database, dataStoragePath),
-    new OsmNightWatch.Analyzers.ImportantFeatures.ImportantFeaturesAnalyzer(dataStoragePath)
+   // new OsmNightWatch.Analyzers.ImportantFeatures.ImportantFeaturesAnalyzer(dataStoragePath)
 };
 
 var dbWithChanges = new OsmDatabaseWithReplicationData(pbfDb, database);
